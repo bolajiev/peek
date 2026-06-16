@@ -18,9 +18,9 @@ import {
   GEMMA4_4B_MULTIMODAL_Q4_K_M,
   MMPROJ_GEMMA4_4B_MULTIMODAL_BF16,
 } from '@qvac/sdk';
-import { ModelInfo, UseCase } from '../types';
+import { ModelInfo } from '../types';
 
-const ALL: UseCase[] = ['food', 'plant', 'text', 'health', 'code', 'object'];
+const ALL: string[] = ['food', 'plant', 'text', 'health', 'code', 'object'];
 
 export const AVAILABLE_MODELS: ModelInfo[] = [
   {
@@ -139,11 +139,11 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   },
 ];
 
-export function getModelsForUseCase(useCase: UseCase): ModelInfo[] {
+export function getModelsForUseCase(useCase: string): ModelInfo[] {
   return AVAILABLE_MODELS.filter((m) => m.supports.includes(useCase));
 }
 
-export const DEFAULT_PROMPTS: Record<UseCase, string> = {
+export const DEFAULT_PROMPTS: Record<string, string> = {
   food: `You are a professional nutritionist and food scientist with deep knowledge of global cuisine. Analyze the food visible in this image carefully.
 
 Respond with ONLY a valid JSON object — no markdown, no code blocks, no text before or after.
@@ -272,7 +272,7 @@ Rules:
 - Output ONLY the JSON, nothing else`,
 };
 
-export function getSystemPrompt(useCase: UseCase): string {
+export function getSystemPrompt(useCase: string): string {
   return DEFAULT_PROMPTS[useCase];
 }
 

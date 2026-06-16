@@ -3,7 +3,9 @@ import { ThemeMode } from '../types';
 export interface Theme {
   background: string;
   card: string;
+  cardAlt: string;
   accent: string;
+  accentFg: string;
   text: string;
   textSecondary: string;
   border: string;
@@ -14,23 +16,27 @@ export interface Theme {
 export const darkTheme: Theme = {
   background: '#0A0A0A',
   card: '#141414',
-  accent: '#00FF87',
+  cardAlt: '#1C1C1C',
+  accent: '#FFC200',
+  accentFg: '#000000',
   text: '#FFFFFF',
-  textSecondary: '#888888',
-  border: '#1E1E1E',
+  textSecondary: '#666666',
+  border: '#222222',
   error: '#FF4444',
-  success: '#00FF87',
+  success: '#4CAF50',
 };
 
 export const lightTheme: Theme = {
-  background: '#F5F5F5',
+  background: '#F5F4F0',
   card: '#FFFFFF',
-  accent: '#00CC6A',
-  text: '#111111',
-  textSecondary: '#666666',
-  border: '#E0E0E0',
+  cardAlt: '#EFEFEB',
+  accent: '#FFC200',
+  accentFg: '#000000',
+  text: '#0A0A0A',
+  textSecondary: '#888888',
+  border: '#E5E5E5',
   error: '#D32F2F',
-  success: '#00CC6A',
+  success: '#388E3C',
 };
 
 export function getTheme(mode: ThemeMode): Theme {

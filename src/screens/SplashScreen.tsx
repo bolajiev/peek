@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Animated, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { isModelDownloaded, initModelsDirectory, syncModelsFromDisk, hasOnboarded } from '../utils/storage';
+import { initModelsDirectory, syncModelsFromDisk, hasOnboarded } from '../utils/storage';
 
 export default function SplashScreen() {
   const navigation = useNavigation<any>();
@@ -27,8 +27,7 @@ export default function SplashScreen() {
         return;
       }
 
-      const hasModel = await isModelDownloaded();
-      navigation.replace('MainTabs', { screen: hasModel ? 'Home' : 'Models' });
+      navigation.replace('Main');
     }, 1800);
 
     return () => clearTimeout(timer);
@@ -49,7 +48,7 @@ export default function SplashScreen() {
         />
         <Text style={[styles.title, { color: theme.accent }]}>Peek</Text>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-          AI-Powered Camera
+          Personal AI Assistant
         </Text>
       </Animated.View>
 

@@ -52,7 +52,7 @@ export default function OnboardingScreen() {
       Animated.timing(btnScale, { toValue: 1, duration: 80, useNativeDriver: true }),
     ]).start();
     await markOnboarded();
-    navigation.replace('MainTabs', { screen: 'Models' });
+    navigation.replace('Main');
   };
 
   return (

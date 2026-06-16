@@ -24,9 +24,9 @@ import {
   initModelsDirectory,
   syncModelsFromDisk,
 } from '../utils/storage';
-import { ModelInfo, DownloadedModel, UseCase } from '../types';
+import { ModelInfo, DownloadedModel } from '../types';
 
-const TAG_OPTIONS: { id: UseCase; label: string; emoji: string }[] = [
+const TAG_OPTIONS: { id: string; label: string; emoji: string }[] = [
   { id: 'food', label: 'Food & Nutrition', emoji: '🍎' },
   { id: 'plant', label: 'Plant Identifier', emoji: '🌿' },
   { id: 'text', label: 'Text & Documents', emoji: '📄' },
@@ -60,7 +60,7 @@ export default function ModelsScreen() {
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [pendingAction, setPendingAction] = useState<'download' | 'custom' | 'load' | null>(null);
   const [pendingModel, setPendingModel] = useState<ModelInfo | null>(null);
-  const [pendingTags, setPendingTags] = useState<UseCase[]>([]);
+  const [pendingTags, setPendingTags] = useState<string[]>([]);
   const [pickedFileUri, setPickedFileUri] = useState<string | null>(null);
 
   useEffect(() => {
@@ -81,7 +81,7 @@ export default function ModelsScreen() {
   const isDownloaded = (modelId: string) =>
     downloadedModels.some((m) => m.id === modelId);
 
-  const toggleTag = (tag: UseCase) => {
+  const toggleTag = (tag: string) => {
     setPendingTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
@@ -111,7 +111,7 @@ export default function ModelsScreen() {
     setPickedFileUri(null);
   };
 
-  const startDownload = async (model: ModelInfo, tags: UseCase[]) => {
+  const startDownload = async (model: ModelInfo, tags: string[]) => {
     const token = await getHfToken();
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -224,7 +224,7 @@ export default function ModelsScreen() {
     setShowTagPicker(true);
   };
 
-  const startCustomDownload = async (tags: UseCase[]) => {
+  const startCustomDownload = async (tags: string[]) => {
     const token = await getHfToken();
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -300,7 +300,7 @@ export default function ModelsScreen() {
     setShowTagPicker(true);
   };
 
-  const startLoadDevice = async (srcUri: string, name: string, tags: UseCase[]) => {
+  const startLoadDevice = async (srcUri: string, name: string, tags: string[]) => {
     getModelsDir().create({ intermediates: true, idempotent: true });
     try {
       const destFile = new File(getModelsDir(), name + '.gguf');
@@ -367,7 +367,7 @@ export default function ModelsScreen() {
     await loadDownloaded();
   };
 
-  const formatUseCases = (supports: UseCase[]) => {
+  const formatstrings = (supports: string[]) => {
     if (supports.length === 6) return 'All categories';
     const labels: Record<string, string> = {
       food: 'Food', plant: 'Plant', text: 'Text',
@@ -469,7 +469,7 @@ export default function ModelsScreen() {
             {model.size}
           </Text>
           <Text style={[styles.metaText, { color: theme.textSecondary }]}>
-            {formatUseCases(model.supports)}
+            {formatstrings(model.supports)}
           </Text>
         </View>
 

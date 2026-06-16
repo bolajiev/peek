@@ -1,9 +1,9 @@
-import { UseCase, InferenceLog } from '../types';
+import { InferenceLog } from '../types';
 import { addInferenceLog } from './storage';
 import * as Device from 'expo-device';
 
 export async function logInference(
-  useCase: UseCase,
+  useCase: string,
   modelName: string,
   ttftMs: number,
   totalMs: number,
@@ -14,7 +14,6 @@ export async function logInference(
 
   const log: InferenceLog = {
     timestamp: new Date().toISOString(),
-    useCase,
     modelName,
     ttftMs,
     totalMs,
@@ -41,7 +40,6 @@ export function logsToCSV(logs: InferenceLog[]): string {
   const rows = logs.map((l) =>
     [
       l.timestamp,
-      l.useCase,
       l.modelName,
       l.ttftMs,
       l.totalMs,

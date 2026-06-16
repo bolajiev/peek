@@ -161,7 +161,7 @@ export async function clearHistory(): Promise<void> {
 
 export async function clearHistoryByCategory(useCase: string): Promise<void> {
   const history = await getHistory();
-  const filtered = history.filter((item) => item.useCase !== useCase);
+  const filtered = history.filter((item) => (item as any).useCase !== useCase);
   await AsyncStorage.setItem(KEYS.HISTORY, JSON.stringify(filtered));
 }
 
@@ -250,6 +250,24 @@ export async function hasOnboarded(): Promise<boolean> {
 
 export async function markOnboarded(): Promise<void> {
   await AsyncStorage.setItem('@peek_onboarded', 'true');
+}
+
+export async function getDefaultModelId(): Promise<string | null> {
+  return AsyncStorage.getItem('@peek_default_model');
+}
+
+export async function setDefaultModelId(modelId: string): Promise<void> {
+  await AsyncStorage.setItem('@peek_default_model', modelId);
+}
+
+export async function getThemeOverride(): Promise<'dark' | 'light' | null> {
+  const val = await AsyncStorage.getItem('@peek_theme_override');
+  if (val === 'dark' || val === 'light') return val;
+  return null;
+}
+
+export async function setThemeOverride(mode: 'dark' | 'light'): Promise<void> {
+  await AsyncStorage.setItem('@peek_theme_override', mode);
 }
 
 export async function getCustomSystemPrompt(useCase: string): Promise<string | null> {
