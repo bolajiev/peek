@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Animated,
   Image,
+  PanResponder,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Paths, File } from 'expo-file-system';
@@ -45,8 +46,42 @@ export default function CameraScreen() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzingText, setAnalyzingText] = useState('Analyzing...');
   const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(0);
+  const [showZoomIndicator, setShowZoomIndicator] = useState(false);
+  const zoomRef = useRef(0);
+  const lastPinchDist = useRef<number | null>(null);
+  const zoomFadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const runRef = useRef<any>(null);
+
+  const pinchResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: (e) => e.nativeEvent.touches.length === 2,
+      onMoveShouldSetPanResponder: (e) => e.nativeEvent.touches.length === 2,
+      onPanResponderGrant: (e) => {
+        if (e.nativeEvent.touches.length === 2) {
+          lastPinchDist.current = pinchDistance(e.nativeEvent.touches as any);
+        }
+      },
+      onPanResponderMove: (e) => {
+        if (e.nativeEvent.touches.length === 2) {
+          const dist = pinchDistance(e.nativeEvent.touches as any);
+          if (lastPinchDist.current !== null) {
+            const delta = (dist - lastPinchDist.current) / 350;
+            const next = Math.min(1, Math.max(0, zoomRef.current + delta));
+            zoomRef.current = next;
+            setZoom(next);
+            setShowZoomIndicator(true);
+            if (zoomFadeTimer.current) clearTimeout(zoomFadeTimer.current);
+            zoomFadeTimer.current = setTimeout(() => setShowZoomIndicator(false), 1500);
+          }
+          lastPinchDist.current = dist;
+        }
+      },
+      onPanResponderRelease: () => { lastPinchDist.current = null; },
+      onPanResponderTerminate: () => { lastPinchDist.current = null; },
+    })
+  ).current;
 
   useEffect(() => {
     if (!permission?.granted) requestPermission();
@@ -245,6 +280,7 @@ export default function CameraScreen() {
         style={styles.camera}
         facing="back"
         mode="picture"
+        zoom={zoom}
         mute
       >
         {/* Top bar */}
@@ -269,7 +305,7 @@ export default function CameraScreen() {
             <Text style={styles.analyzingText}>{analyzingText}</Text>
           </View>
         ) : (
-          <View style={styles.scanFrameContainer}>
+          <View style={styles.scanFrameContainer} {...pinchResponder.panHandlers}>
             <Animated.View
               style={[styles.scanFrame, { transform: [{ scale: pulseAnim }] }]}
             >
@@ -278,6 +314,11 @@ export default function CameraScreen() {
               <View style={[styles.corner, styles.cornerBL, { borderColor: accent }]} />
               <View style={[styles.corner, styles.cornerBR, { borderColor: accent }]} />
             </Animated.View>
+            {showZoomIndicator && (
+              <View style={[styles.zoomBadge, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
+                <Text style={styles.zoomText}>{(1 + zoom * 9).toFixed(1)}×</Text>
+              </View>
+            )}
             <Text style={styles.hintText}>Point at {getUseCaseHint(useCase)}</Text>
           </View>
         )}
@@ -309,6 +350,12 @@ export default function CameraScreen() {
       </CameraView>
     </View>
   );
+}
+
+function pinchDistance(touches: { pageX: number; pageY: number }[]): number {
+  const dx = touches[0].pageX - touches[1].pageX;
+  const dy = touches[0].pageY - touches[1].pageY;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 function getUseCaseLabel(useCase: UseCase): string {
@@ -434,6 +481,16 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     fontSize: 14,
     fontWeight: '500',
+  },
+  zoomBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  zoomText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
   },
   analyzingOverlay: {
     flex: 1,
