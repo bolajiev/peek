@@ -47,7 +47,14 @@
         {
           "cameraPermission": "Peek needs camera access to scan and identify objects."
         }
-      ]
-    ]
+      ],
+      "expo-document-picker"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "6f629760-804e-4033-97cb-b63145dd6500"
+      }
+    },
+    "owner": "lintonsui"
   }
 }

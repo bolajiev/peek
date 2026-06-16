@@ -60,3 +60,11 @@ export function getSystemPrompt(useCase: UseCase): string {
   };
   return prompts[useCase];
 }
+
+export function getHfDownloadUrl(modelSrc: string): string {
+  const match = modelSrc.match(/registry:\/\/hf\/([^/]+\/[^/]+)\/resolve\/[^/]+\/(.+)/);
+  if (match) {
+    return `https://huggingface.co/${match[1]}/resolve/main/${match[2]}`;
+  }
+  return modelSrc;
+}

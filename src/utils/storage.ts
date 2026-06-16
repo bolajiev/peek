@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Paths, File, Directory } from 'expo-file-system';
 import { HistoryItem, InferenceLog, AppSettings, ThemeMode, Accelerator, ResponseLength, DownloadedModel } from '../types';
 
 const KEYS = {
@@ -7,6 +8,7 @@ const KEYS = {
   INFERENCE_LOGS: '@peek_inference_logs',
   DOWNLOADED_MODELS: '@peek_downloaded_models',
   SCAN_STREAK: '@peek_scan_streak',
+  HF_TOKEN: 'peek_hf_token',
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -15,6 +17,65 @@ const DEFAULT_SETTINGS: AppSettings = {
   responseLength: 'balanced',
   huggingFaceToken: '',
 };
+
+export function getModelsDir(): Directory {
+  return new Directory(Paths.document, 'peek', 'models');
+}
+
+export async function initModelsDirectory(): Promise<void> {
+  const dir = getModelsDir();
+  dir.create({ intermediates: true, idempotent: true });
+}
+
+export async function syncModelsFromDisk(): Promise<DownloadedModel[]> {
+  await initModelsDirectory();
+  const dir = getModelsDir();
+  let files: (File | Directory)[] = [];
+  try {
+    files = dir.list();
+  } catch {
+    return [];
+  }
+
+  const ggufFiles = files.filter(
+    (f): f is File => f instanceof File && f.uri.endsWith('.gguf')
+  );
+
+  const stored = await getDownloadedModels();
+  const synced: DownloadedModel[] = [];
+  const seenUris = new Set<string>();
+
+  for (const file of ggufFiles) {
+    seenUris.add(file.uri);
+    const existing = stored.find((m) => m.downloadedPath === file.uri);
+    if (existing) {
+      synced.push(existing);
+    } else {
+      const name = file.name.replace(/\.gguf$/i, '');
+      synced.push({
+        id: `disk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name,
+        size: '',
+        sizeBytes: file.size || 0,
+        modelSrc: file.uri,
+        supports: ['food', 'plant', 'text', 'health', 'code', 'object'],
+        downloadedPath: file.uri,
+        isDownloaded: true,
+        isCustom: true,
+      });
+    }
+  }
+
+  const kept = stored.filter((m) => {
+    if (m.downloadedPath && m.downloadedPath.startsWith('file://')) {
+      return seenUris.has(m.downloadedPath);
+    }
+    return true;
+  });
+
+  await AsyncStorage.setItem(KEYS.DOWNLOADED_MODELS, JSON.stringify(synced));
+  return synced;
+}
 
 export async function getSettings(): Promise<AppSettings> {
   try {
@@ -66,6 +127,16 @@ export async function getHuggingFaceToken(): Promise<string> {
 
 export async function setHuggingFaceToken(token: string): Promise<void> {
   await saveSettings({ huggingFaceToken: token });
+  await AsyncStorage.setItem(KEYS.HF_TOKEN, token);
+}
+
+export async function getHfToken(): Promise<string> {
+  try {
+    const token = await AsyncStorage.getItem(KEYS.HF_TOKEN);
+    return token || '';
+  } catch {
+    return '';
+  }
 }
 
 export async function getHistory(): Promise<HistoryItem[]> {

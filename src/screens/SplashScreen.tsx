@@ -1,15 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { isModelDownloaded } from '../utils/storage';
+import { isModelDownloaded, initModelsDirectory, syncModelsFromDisk } from '../utils/storage';
 
-type Props = {
-  navigation: NativeStackNavigationProp<any>;
-};
-
-export default function SplashScreen({ navigation }: Props) {
+export default function SplashScreen() {
+  const navigation = useNavigation<any>();
   const theme = getTheme(useTheme());
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
@@ -29,6 +26,8 @@ export default function SplashScreen({ navigation }: Props) {
     ]).start();
 
     const timer = setTimeout(async () => {
+      await initModelsDirectory();
+      await syncModelsFromDisk();
       const hasModel = await isModelDownloaded();
       if (hasModel) {
         navigation.replace('MainTabs', { screen: 'Home' });

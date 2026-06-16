@@ -9,14 +9,18 @@ import {
   Alert,
 } from 'react-native';
 import { Paths, File, Directory } from 'expo-file-system';
+import * as DocumentPicker from 'expo-document-picker';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { AVAILABLE_MODELS } from '../utils/models';
+import { AVAILABLE_MODELS, getHfDownloadUrl } from '../utils/models';
 import {
   getDownloadedModels,
   saveDownloadedModel,
   removeDownloadedModel,
-  getHuggingFaceToken,
+  getHfToken,
+  getModelsDir,
+  initModelsDirectory,
+  syncModelsFromDisk,
 } from '../utils/storage';
 import { ModelInfo, DownloadedModel } from '../types';
 
@@ -26,10 +30,17 @@ export default function ModelsScreen() {
   const [downloading, setDownloading] = useState<Record<string, number>>({});
   const [customUrl, setCustomUrl] = useState('');
   const [customName, setCustomName] = useState('');
+  const [loadFromDeviceName, setLoadFromDeviceName] = useState('');
 
   useEffect(() => {
-    loadDownloaded();
+    init();
   }, []);
+
+  const init = async () => {
+    await initModelsDirectory();
+    const synced = await syncModelsFromDisk();
+    setDownloadedModels(synced);
+  };
 
   const loadDownloaded = async () => {
     const models = await getDownloadedModels();
@@ -40,23 +51,25 @@ export default function ModelsScreen() {
     downloadedModels.some((m) => m.id === modelId);
 
   const handleDownload = async (model: ModelInfo) => {
-    const token = await getHuggingFaceToken();
+    const token = await getHfToken();
     const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
 
-    const modelDir = new Directory(Paths.document, 'models');
+    const modelDir = getModelsDir();
     modelDir.create({ intermediates: true, idempotent: true });
 
     setDownloading((prev) => ({ ...prev, [model.id]: 0 }));
 
     try {
       const destFile = new File(modelDir, `${model.id}.gguf`);
+      const url = getHfDownloadUrl(model.modelSrc);
 
-      const file = await File.downloadFileAsync(
-        `https://huggingface.co/${model.modelSrc.replace(/^.*?\/\//, '')}`,
-        destFile,
-        { headers, idempotent: true }
-      );
+      const file = await File.downloadFileAsync(url, destFile, {
+        headers,
+        idempotent: true,
+      });
 
       const newModel: DownloadedModel = {
         ...model,
@@ -70,13 +83,13 @@ export default function ModelsScreen() {
         return n;
       });
       await loadDownloaded();
-    } catch (err) {
+    } catch {
       setDownloading((prev) => {
         const n = { ...prev };
         delete n[model.id];
         return n;
       });
-      Alert.alert('Download Failed', 'Could not download the model. Check your HuggingFace token if the model is gated.');
+      Alert.alert('Download Failed', 'Could not download the model.');
     }
   };
 
@@ -96,11 +109,13 @@ export default function ModelsScreen() {
       return;
     }
 
-    const token = await getHuggingFaceToken();
+    const token = await getHfToken();
     const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
 
-    const modelDir = new Directory(Paths.document, 'models');
+    const modelDir = getModelsDir();
     modelDir.create({ intermediates: true, idempotent: true });
 
     const customId = `custom-${Date.now()}`;
@@ -109,11 +124,10 @@ export default function ModelsScreen() {
     try {
       const destFile = new File(modelDir, `custom_${customName}.gguf`);
 
-      const file = await File.downloadFileAsync(
-        customUrl,
-        destFile,
-        { headers, idempotent: true }
-      );
+      const file = await File.downloadFileAsync(customUrl, destFile, {
+        headers,
+        idempotent: true,
+      });
 
       const newModel: DownloadedModel = {
         id: customId,
@@ -142,6 +156,51 @@ export default function ModelsScreen() {
         return n;
       });
       Alert.alert('Download Failed', 'Could not download the custom model.');
+    }
+  };
+
+  const handleLoadFromDevice = async () => {
+    if (!loadFromDeviceName.trim()) {
+      Alert.alert('Missing Name', 'Enter a name for the model first.');
+      return;
+    }
+
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const picked = result.assets[0];
+      if (!picked.uri) return;
+
+      const modelDir = getModelsDir();
+      modelDir.create({ intermediates: true, idempotent: true });
+
+      const destFile = new File(modelDir, `${loadFromDeviceName.trim()}.gguf`);
+      const srcFile = new File(picked.uri);
+      srcFile.copy(destFile);
+
+      const modelId = `loaded-${Date.now()}`;
+      const newModel: DownloadedModel = {
+        id: modelId,
+        name: loadFromDeviceName.trim(),
+        size: picked.size ? `${(picked.size / 1048576).toFixed(1)}MB` : '',
+        sizeBytes: picked.size || 0,
+        modelSrc: destFile.uri,
+        supports: ['food', 'plant', 'text', 'health', 'code', 'object'],
+        downloadedPath: destFile.uri,
+        isDownloaded: true,
+        isCustom: true,
+      };
+      await saveDownloadedModel(newModel);
+      setLoadFromDeviceName('');
+      await loadDownloaded();
+      Alert.alert('Loaded', `Model "${newModel.name}" loaded from device.`);
+    } catch {
+      Alert.alert('Error', 'Could not load model from device.');
     }
   };
 
@@ -186,7 +245,7 @@ export default function ModelsScreen() {
                   {model.name}
                 </Text>
                 <Text style={[styles.modelMeta, { color: theme.textSecondary }]}>
-                  {model.size} • Downloaded
+                  {model.size || 'Unknown'} • Downloaded
                 </Text>
                 <Text style={[styles.modelUseCases, { color: theme.textSecondary }]}>
                   {formatUseCases(model.supports)}
@@ -317,6 +376,29 @@ export default function ModelsScreen() {
           >
             <Text style={[styles.downloadButtonText, { color: theme.background }]}>
               Download Custom Model
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.sectionHeader, { marginTop: 32 }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            Load from Device
+          </Text>
+        </View>
+        <View style={[styles.customCard, { backgroundColor: theme.card }]}>
+          <TextInput
+            style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+            placeholder="Model name"
+            placeholderTextColor={theme.textSecondary}
+            value={loadFromDeviceName}
+            onChangeText={setLoadFromDeviceName}
+          />
+          <TouchableOpacity
+            style={[styles.downloadButton, { backgroundColor: theme.accent, alignSelf: 'flex-start', marginTop: 8 }]}
+            onPress={handleLoadFromDevice}
+          >
+            <Text style={[styles.downloadButtonText, { color: theme.background }]}>
+              Pick .gguf from Device
             </Text>
           </TouchableOpacity>
         </View>
