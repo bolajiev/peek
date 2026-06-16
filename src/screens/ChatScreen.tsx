@@ -10,12 +10,12 @@ import {
   Platform,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { loadModel, unloadModel, completion } from '@qvac/sdk';
+import { loadModel, unloadModel, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getSettings } from '../utils/storage';
+import { getSettings, getDownloadedModels } from '../utils/storage';
 import { AVAILABLE_MODELS } from '../utils/models';
-import { ScanResult } from '../types';
+import { ScanResult, ModelInfo } from '../types';
 
 type ChatParams = {
   Chat: { result: ScanResult; useCase: string; modelId: string };
@@ -38,21 +38,29 @@ export default function ChatScreen() {
   const [modelLoaded, setModelLoaded] = useState(false);
   const [modelIdStr, setModelIdStr] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
+  const modelIdRef = useRef<string | null>(null);
+  const currentRunRef = useRef<any>(null);
 
   useEffect(() => {
     loadModelForChat();
     return () => {
-      if (modelIdStr) {
-        unloadModel({ modelId: modelIdStr }).catch(() => {});
+      if (currentRunRef.current) {
+        void cancel({ requestId: currentRunRef.current.requestId }).catch(() => {});
+      }
+      if (modelIdRef.current) {
+        unloadModel({ modelId: modelIdRef.current }).catch(() => {});
       }
     };
   }, []);
 
   const loadModelForChat = async () => {
     try {
-      const modelInfo = AVAILABLE_MODELS.find(
-        (m: any) => m.id === modelId
-      );
+      let modelInfo = await findModelById(modelId);
+      if (!modelInfo) {
+        // opened from history — pick first available downloaded model
+        const downloaded = await getDownloadedModels();
+        modelInfo = downloaded[0] ?? null;
+      }
       if (!modelInfo) return;
 
       const settings = await getSettings();
@@ -61,17 +69,17 @@ export default function ChatScreen() {
       if (settings.responseLength === 'short') ctxSize = 1024;
       else if (settings.responseLength === 'detailed') ctxSize = 4096;
 
-      const loadConfig: any = {
-        modelSrc: modelInfo.modelSrc,
-        device,
-        ctx_size: ctxSize,
-      };
-
+      const modelConfig: any = { ctx_size: ctxSize, device };
       if (modelInfo.projectionModelSrc) {
-        loadConfig.projectionModelSrc = modelInfo.projectionModelSrc;
+        modelConfig.projectionModelSrc = modelInfo.projectionModelSrc;
       }
 
-      const id = await loadModel(loadConfig);
+      const id = await loadModel({
+        modelSrc: modelInfo.modelSrc,
+        modelType: 'llm',
+        modelConfig,
+      });
+      modelIdRef.current = id;
       setModelIdStr(id);
       setModelLoaded(true);
     } catch {
@@ -92,12 +100,14 @@ export default function ChatScreen() {
     setInputText('');
     setIsLoading(true);
 
+    const placeholderId = (Date.now() + 1).toString();
+    setMessages((prev) => [
+      ...prev,
+      { id: placeholderId, role: 'assistant', text: '' },
+    ]);
+
     try {
-      const contextText = `Previous scan result context:\n${JSON.stringify(
-        result,
-        null,
-        2
-      )}\n\nUse case: ${useCase}`;
+      const contextText = buildChatContext(result, useCase);
 
       const run = completion({
         modelId: modelIdStr,
@@ -109,26 +119,43 @@ export default function ChatScreen() {
           })),
           { role: 'user', content: userMsg.text },
         ],
-        stream: false,
+        stream: true,
       });
+      currentRunRef.current = run;
+
+      let streamed = '';
+      for await (const event of run.events) {
+        if (event.type === 'contentDelta') {
+          streamed += event.text;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === placeholderId ? { ...m, text: streamed } : m
+            )
+          );
+        }
+      }
 
       const final = await run.final;
-      const text = final.contentText || final.raw?.fullText || 'No response';
-
-      const assistantMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        text,
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
-    } catch {
-      const errorMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        text: 'Sorry, I encountered an error processing your question.',
-      };
-      setMessages((prev) => [...prev, errorMsg]);
+      currentRunRef.current = null;
+      const text = final.contentText || streamed || 'No response';
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === placeholderId ? { ...m, text } : m
+        )
+      );
+    } catch (err) {
+      currentRunRef.current = null;
+      if (err instanceof InferenceCancelledError) {
+        // user navigated away — keep whatever was streamed
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === placeholderId
+              ? { ...m, text: 'Sorry, I encountered an error.' }
+              : m
+          )
+        );
+      }
     }
 
     setIsLoading(false);
@@ -233,6 +260,72 @@ export default function ChatScreen() {
       </View>
     </KeyboardAvoidingView>
   );
+}
+
+function buildChatContext(result: any, useCase: string): string {
+  const base = `You are a helpful AI assistant. The user scanned an image using the Peek app and got the following result. Answer their follow-up questions conversationally — be specific, helpful, and friendly. Do NOT output JSON.\n\n`;
+  switch (useCase) {
+    case 'food':
+      return base + `FOOD SCAN: "${result.foodName ?? 'a food item'}"
+Nutrition per serving: ${result.calories ?? '?'} kcal | Protein ${result.protein ?? '?'}g | Carbs ${result.carbs ?? '?'}g | Fat ${result.fat ?? '?'}g
+Health rating: ${result.healthRating ?? '?'}/10
+Ingredients: ${result.ingredients?.join(', ') ?? 'unknown'}
+${result.funFact ? 'Fun fact: ' + result.funFact : ''}
+${result._rawText ? 'Raw analysis: ' + result._rawText : ''}
+
+Help with: recipes, substitutions, allergy questions, nutrition breakdowns, meal planning.`;
+
+    case 'plant':
+      return base + `PLANT SCAN: "${result.plantName ?? 'a plant'}" (${result.scientificName ?? ''})
+Care level: ${result.careLevel ?? '?'} | Watering: ${result.wateringFrequency ?? '?'}
+Toxic: ${result.toxic ? 'Yes — toxic to: ' + result.toxicTo?.join(', ') : 'No'}
+Tips: ${result.tips?.join('; ') ?? ''}
+${result._rawText ? 'Raw analysis: ' + result._rawText : ''}
+
+Help with: care routines, propagation, pests, soil types, companion planting.`;
+
+    case 'text':
+      return base + `DOCUMENT SCAN: ${result.documentType ?? 'document'} in ${result.detectedLanguage ?? 'unknown language'}
+Extracted text: ${result.extractedText ?? result._rawText ?? ''}
+Summary: ${result.summary ?? ''}
+${result.translation ? 'Translation: ' + result.translation : ''}
+
+Help with: deeper explanation, translation, legal/financial interpretation, summarising further.`;
+
+    case 'health':
+      return base + `HEALTH SCAN result:
+Analysis: ${result.analysis ?? result._rawText ?? ''}
+Key information: ${result.keyInformation ?? ''}
+IMPORTANT: Always remind the user to consult a qualified healthcare professional for any real medical decision.
+
+Help with: explaining medical terms, understanding dosages/warnings, general health information.`;
+
+    case 'code':
+      return base + `CODE SCAN: ${result.detectedLanguage ?? 'code'} detected
+Explanation: ${result.explanation ?? result._rawText ?? ''}
+Bugs found: ${result.bugs?.length ? result.bugs.join('; ') : 'none'}
+Suggestions: ${result.suggestions?.join('; ') ?? ''}
+
+Help with: refactoring, bug fixes, algorithm explanation, best practices, unit tests.`;
+
+    case 'object':
+      return base + `OBJECT SCAN: "${result.objectName ?? 'an object'}"${result.category ? ' — ' + result.category : ''}
+Description: ${result.description ?? result._rawText ?? ''}
+${result.estimatedValue ? 'Estimated value: ' + result.estimatedValue : ''}
+${result.funFact ? 'Fun fact: ' + result.funFact : ''}
+
+Help with: history, how it works, where to buy, similar items, usage tips.`;
+
+    default:
+      return base + `Scan result:\n${JSON.stringify(result, null, 2)}`;
+  }
+}
+
+async function findModelById(modelId: string): Promise<ModelInfo | null> {
+  const downloaded = await getDownloadedModels();
+  const local = downloaded.find((m) => m.id === modelId);
+  if (local) return local;
+  return AVAILABLE_MODELS.find((m) => m.id === modelId) || null;
 }
 
 const styles = StyleSheet.create({

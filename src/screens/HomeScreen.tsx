@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
+import { PeekLogo } from '../components/PeekLogo';
 import {
   View,
   Text,
@@ -7,12 +8,11 @@ import {
   FlatList,
   Modal,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { USE_CASES, ModelInfo, UseCase } from '../types';
+import { USE_CASES, ModelInfo, UseCase, DownloadedModel } from '../types';
 import { getScanStreak, getDownloadedModels } from '../utils/storage';
-import { getModelsForUseCase } from '../utils/models';
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
@@ -22,21 +22,35 @@ export default function HomeScreen() {
   const [showNoModelAlert, setShowNoModelAlert] = useState(false);
   const [selectedUseCase, setSelectedUseCase] = useState<UseCase | null>(null);
   const [compatibleModels, setCompatibleModels] = useState<ModelInfo[]>([]);
+  const [downloadedModels, setDownloadedModels] = useState<DownloadedModel[]>([]);
 
-  useEffect(() => {
-    loadStreak();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadStreak();
+      loadDownloaded();
+    }, [])
+  );
 
   const loadStreak = async () => {
     const s = await getScanStreak();
     setStreak(s.count);
   };
 
+  const loadDownloaded = async () => {
+    const models = await getDownloadedModels();
+    setDownloadedModels(models);
+  };
+
+  const availableUseCases = downloadedModels.length === 0
+    ? USE_CASES
+    : USE_CASES.filter((uc) =>
+        downloadedModels.some((d) => d.supports.includes(uc.id))
+      );
+
   const handleUseCasePress = useCallback(async (useCase: UseCase) => {
-    const models = getModelsForUseCase(useCase);
     const downloaded = await getDownloadedModels();
-    const compatible = models.filter((m) =>
-      downloaded.some((d) => d.id === m.id)
+    const compatible = downloaded.filter((d) =>
+      d.supports.includes(useCase)
     );
 
     if (compatible.length === 0) {
@@ -81,8 +95,9 @@ export default function HomeScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <View style={styles.headerLeft}>
+          <PeekLogo size={32} color={theme.accent} />
           <Text style={[styles.headerLogo, { color: theme.accent }]}>
-            👁️ Peek
+            Peek
           </Text>
         </View>
         <View style={styles.headerRight}>
@@ -104,15 +119,44 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <FlatList
-        data={USE_CASES}
-        renderItem={renderUseCaseCard}
-        keyExtractor={(item) => item.id}
-        numColumns={2}
-        columnWrapperStyle={styles.row}
-        contentContainerStyle={styles.grid}
-        showsVerticalScrollIndicator={false}
-      />
+      {downloadedModels.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <PeekLogo size={72} color={theme.accent} pulse />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>
+            Welcome to Peek
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
+            Download an AI model to start scanning food, plants, text, and more — privately on your device.
+          </Text>
+          <TouchableOpacity
+            style={[styles.emptyBtn, { backgroundColor: theme.accent }]}
+            onPress={() => navigation.navigate('MainTabs', { screen: 'Models' })}
+          >
+            <Text style={[styles.emptyBtnText, { color: theme.background }]}>
+              Get a Model  →
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : availableUseCases.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={[styles.emptyTitle, { color: theme.textSecondary }]}>
+            No compatible use cases
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
+            Your downloaded models don't support any scan types yet
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={availableUseCases}
+          renderItem={renderUseCaseCard}
+          keyExtractor={(item) => item.id}
+          numColumns={2}
+          columnWrapperStyle={styles.row}
+          contentContainerStyle={styles.grid}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
 
       <Modal
         visible={showModelPicker}
@@ -219,8 +263,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerLogo: {
-    fontSize: 24,
-    fontWeight: '800',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginLeft: 8,
   },
   headerRight: {
     flexDirection: 'row',
@@ -266,6 +312,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+    gap: 12,
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 28,
+  },
+  emptyBtn: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+  },
+  emptyBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
   },
   modalOverlay: {
     flex: 1,

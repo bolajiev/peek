@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,28 +7,46 @@ import {
   TouchableOpacity,
   Alert,
   Share,
+  ScrollView,
+  Image,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Paths, File } from 'expo-file-system';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getHistory, clearHistory, getInferenceLogs } from '../utils/storage';
+import {
+  getHistory,
+  clearHistory,
+  clearHistoryByCategory,
+  getInferenceLogs,
+} from '../utils/storage';
 import { logsToCSV } from '../utils/auditLogger';
-import { HistoryItem, USE_CASES } from '../types';
+import { HistoryItem, USE_CASES, UseCase } from '../types';
 
 export default function HistoryScreen() {
   const navigation = useNavigation<any>();
   const theme = getTheme(useTheme());
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<UseCase | null>(null);
 
-  useEffect(() => {
-    loadHistory();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadHistory();
+    }, [])
+  );
 
   const loadHistory = async () => {
     const items = await getHistory();
     setHistory(items);
   };
+
+  const filtered = selectedCategory
+    ? history.filter((item) => item.useCase === selectedCategory)
+    : history;
+
+  const usedCategories = USE_CASES.filter((uc) =>
+    history.some((item) => item.useCase === uc.id)
+  );
 
   const handleItemPress = useCallback(
     (item: HistoryItem) => {
@@ -36,20 +54,33 @@ export default function HistoryScreen() {
         result: item.result,
         useCase: item.useCase,
         modelId: '',
+        imagePath: item.imagePath,
+        modelName: item.modelName,
       });
     },
     [navigation]
   );
 
   const handleClear = () => {
-    Alert.alert('Clear History', 'Are you sure?', [
+    const label = selectedCategory
+      ? USE_CASES.find((u) => u.id === selectedCategory)?.label
+      : 'All';
+    Alert.alert(`Clear ${label} History`, 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear',
         style: 'destructive',
         onPress: async () => {
-          await clearHistory();
-          setHistory([]);
+          if (selectedCategory) {
+            await clearHistoryByCategory(selectedCategory);
+            setHistory((prev) =>
+              prev.filter((item) => item.useCase !== selectedCategory)
+            );
+            setSelectedCategory(null);
+          } else {
+            await clearHistory();
+            setHistory([]);
+          }
         },
       },
     ]);
@@ -62,11 +93,9 @@ export default function HistoryScreen() {
         Alert.alert('No Logs', 'No inference logs to export.');
         return;
       }
-
       const csv = logsToCSV(logs);
       const file = new File(Paths.cache, 'peek_inference_logs.csv');
       file.write(csv);
-
       await Share.share({
         message: `Peek Inference Logs\n\n${csv}`,
         title: 'Peek Inference Logs',
@@ -74,11 +103,6 @@ export default function HistoryScreen() {
     } catch {
       Alert.alert('Export Failed', 'Could not export logs.');
     }
-  };
-
-  const getUseCaseEmoji = (useCase: string) => {
-    const uc = USE_CASES.find((u) => u.id === useCase);
-    return uc?.emoji || '📷';
   };
 
   const formatTimestamp = (ts: string) => {
@@ -91,24 +115,31 @@ export default function HistoryScreen() {
     });
   };
 
-  const getPreviewText = (item: HistoryItem) => {
+  const getPreviewText = (item: HistoryItem): string => {
+    const raw = (item.result as any)._rawText as string | undefined;
     switch (item.result.type) {
       case 'food':
-        return item.result.foodName;
+        return item.result.foodName || raw?.substring(0, 60) || 'Food scan';
       case 'plant':
-        return item.result.plantName;
+        return item.result.plantName || raw?.substring(0, 60) || 'Plant scan';
       case 'text':
-        return item.result.summary?.substring(0, 60) || 'Text scan';
+        return item.result.summary?.substring(0, 60) || raw?.substring(0, 60) || 'Text scan';
       case 'health':
-        return item.result.keyInformation?.substring(0, 60) || 'Health scan';
+        return item.result.keyInformation?.substring(0, 60) || raw?.substring(0, 60) || 'Health scan';
       case 'code':
-        return `${item.result.detectedLanguage}: ${item.result.explanation?.substring(0, 40)}`;
+        return item.result.detectedLanguage
+          ? `${item.result.detectedLanguage}: ${item.result.explanation?.substring(0, 40) || ''}`
+          : raw?.substring(0, 60) || 'Code scan';
       case 'object':
-        return item.result.objectName;
+        return item.result.objectName || raw?.substring(0, 60) || 'Object scan';
       default:
         return 'Scan result';
     }
   };
+
+  const selectedInfo = selectedCategory
+    ? USE_CASES.find((u) => u.id === selectedCategory)
+    : null;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -120,54 +151,147 @@ export default function HistoryScreen() {
             onPress={handleExportLogs}
           >
             <Text style={[styles.headerBtnText, { color: theme.textSecondary }]}>
-              Export Logs
+              Export
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.headerBtn, { borderColor: theme.border }]}
-            onPress={handleClear}
-          >
-            <Text style={[styles.headerBtnText, { color: theme.error }]}>
-              Clear
-            </Text>
-          </TouchableOpacity>
+          {filtered.length > 0 && (
+            <TouchableOpacity
+              style={[styles.headerBtn, { borderColor: theme.border }]}
+              onPress={handleClear}
+            >
+              <Text style={[styles.headerBtnText, { color: theme.error }]}>
+                Clear
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
-      <FlatList
-        data={history}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => (
+      {usedCategories.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabs}
+        >
           <TouchableOpacity
-            style={[styles.historyItem, { backgroundColor: theme.card }]}
-            onPress={() => handleItemPress(item)}
-            activeOpacity={0.7}
+            style={[
+              styles.tab,
+              {
+                backgroundColor:
+                  selectedCategory === null ? theme.accent : theme.card,
+                borderColor:
+                  selectedCategory === null ? theme.accent : theme.border,
+              },
+            ]}
+            onPress={() => setSelectedCategory(null)}
           >
-            <Text style={styles.itemEmoji}>
-              {getUseCaseEmoji(item.useCase)}
-            </Text>
-            <View style={styles.itemContent}>
-              <Text
-                style={[styles.itemPreview, { color: theme.text }]}
-                numberOfLines={1}
-              >
-                {getPreviewText(item)}
-              </Text>
-              <Text style={[styles.itemMeta, { color: theme.textSecondary }]}>
-                {item.modelName} • {formatTimestamp(item.timestamp)}
-              </Text>
-            </View>
-            <Text style={[styles.itemArrow, { color: theme.textSecondary }]}>
-              ›
+            <Text
+              style={[
+                styles.tabText,
+                {
+                  color:
+                    selectedCategory === null
+                      ? theme.background
+                      : theme.textSecondary,
+                },
+              ]}
+            >
+              All ({history.length})
             </Text>
           </TouchableOpacity>
-        )}
+
+          {usedCategories.map((uc) => {
+            const count = history.filter((item) => item.useCase === uc.id).length;
+            const isActive = selectedCategory === uc.id;
+            return (
+              <TouchableOpacity
+                key={uc.id}
+                style={[
+                  styles.tab,
+                  {
+                    backgroundColor: isActive ? theme.accent : theme.card,
+                    borderColor: isActive ? theme.accent : theme.border,
+                  },
+                ]}
+                onPress={() =>
+                  setSelectedCategory(isActive ? null : uc.id)
+                }
+              >
+                <Text style={styles.tabEmoji}>{uc.emoji}</Text>
+                <Text
+                  style={[
+                    styles.tabText,
+                    {
+                      color: isActive
+                        ? theme.background
+                        : theme.textSecondary,
+                    },
+                  ]}
+                >
+                  {count}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      <FlatList
+        data={filtered}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={[styles.list, filtered.length === 0 && styles.listEmpty]}
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item }) => {
+          const uc = USE_CASES.find((u) => u.id === item.useCase);
+          return (
+            <TouchableOpacity
+              style={[styles.historyItem, { backgroundColor: theme.card }]}
+              onPress={() => handleItemPress(item)}
+              activeOpacity={0.7}
+            >
+              {item.imagePath ? (
+                <Image
+                  source={{ uri: item.imagePath }}
+                  style={styles.itemThumbnail}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={styles.itemEmoji}>{uc?.emoji || '📷'}</Text>
+              )}
+              <View style={styles.itemContent}>
+                <Text
+                  style={[styles.itemPreview, { color: theme.text }]}
+                  numberOfLines={1}
+                >
+                  {getPreviewText(item)}
+                </Text>
+                <Text
+                  style={[styles.itemMeta, { color: theme.textSecondary }]}
+                >
+                  {uc?.label} • {item.modelName} •{' '}
+                  {formatTimestamp(item.timestamp)}
+                </Text>
+              </View>
+              <Text style={[styles.itemArrow, { color: theme.textSecondary }]}>
+                ›
+              </Text>
+            </TouchableOpacity>
+          );
+        }}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-              No scan history yet
+            <Text style={styles.emptyEmoji}>
+              {selectedInfo ? selectedInfo.emoji : '📋'}
+            </Text>
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>
+              {selectedInfo
+                ? `No ${selectedInfo.label} scans yet`
+                : 'No scans yet'}
+            </Text>
+            <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
+              {selectedInfo
+                ? 'Tap the category to deselect and see all scans'
+                : 'Your scan results will appear here'}
             </Text>
           </View>
         }
@@ -207,8 +331,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  tabs: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 4,
+  },
+  tabEmoji: {
+    fontSize: 14,
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
   list: {
     padding: 16,
+  },
+  listEmpty: {
+    flexGrow: 1,
   },
   historyItem: {
     flexDirection: 'row',
@@ -219,6 +367,12 @@ const styles = StyleSheet.create({
   },
   itemEmoji: {
     fontSize: 28,
+    marginRight: 12,
+  },
+  itemThumbnail: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
     marginRight: 12,
   },
   itemContent: {
@@ -240,9 +394,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 100,
+    paddingTop: 80,
+    paddingHorizontal: 40,
   },
-  emptyText: {
-    fontSize: 16,
+  emptyEmoji: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

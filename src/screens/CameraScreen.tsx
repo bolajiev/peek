@@ -10,15 +10,14 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Paths, File } from 'expo-file-system';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { loadModel, unloadModel, completion } from '@qvac/sdk';
+import { loadModel, unloadModel, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { getSystemPrompt, AVAILABLE_MODELS } from '../utils/models';
-import { getSettings } from '../utils/storage';
+import { getSettings, getDownloadedModels, getCustomSystemPrompt } from '../utils/storage';
 import { logInference } from '../utils/auditLogger';
-import { updateScanStreak } from '../utils/storage';
-import { addHistoryItem } from '../utils/storage';
-import { UseCase, ScanResult } from '../types';
+import { updateScanStreak, addHistoryItem } from '../utils/storage';
+import { UseCase, ScanResult, ModelInfo } from '../types';
 
 type CameraParams = {
   Camera: { useCase: UseCase; modelId: string };
@@ -34,6 +33,7 @@ export default function CameraScreen() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzingText, setAnalyzingText] = useState('Analyzing...');
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const runRef = useRef<any>(null);
 
   useEffect(() => {
     if (!permission?.granted) {
@@ -66,6 +66,7 @@ export default function CameraScreen() {
     setIsAnalyzing(true);
     setAnalyzingText('Capturing...');
 
+    let loadedModelIdStr: string | null = null;
     try {
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.8,
@@ -76,13 +77,13 @@ export default function CameraScreen() {
         return;
       }
 
-      const savedFile = new File(Paths.cache, `peek_scan_${Date.now()}.jpg`);
+      const savedFile = new File(Paths.document, `peek_scan_${Date.now()}.jpg`);
       const tempFile = new File(photo.uri);
       tempFile.copy(savedFile);
 
       setAnalyzingText('Loading model...');
 
-      const modelInfo = AVAILABLE_MODELS.find((m) => m.id === modelId);
+      const modelInfo = await findModelById(modelId);
       if (!modelInfo) {
         setIsAnalyzing(false);
         return;
@@ -94,25 +95,28 @@ export default function CameraScreen() {
       if (settings.responseLength === 'short') ctxSize = 1024;
       else if (settings.responseLength === 'detailed') ctxSize = 4096;
 
-      const loadConfig: any = {
-        modelSrc: modelInfo.modelSrc,
-        device,
-        ctx_size: ctxSize,
-      };
-
+      const modelConfig: any = { ctx_size: ctxSize, device };
       if (modelInfo.projectionModelSrc) {
-        loadConfig.projectionModelSrc = modelInfo.projectionModelSrc;
+        modelConfig.projectionModelSrc = modelInfo.projectionModelSrc;
       }
 
-      const modelIdStr = await loadModel(loadConfig);
+      loadedModelIdStr = await loadModel({
+        modelSrc: modelInfo.modelSrc,
+        modelType: 'llm',
+        modelConfig,
+        onProgress: (p) => {
+          setAnalyzingText(`Loading model… ${p.percentage.toFixed(0)}%`);
+        },
+      });
       const startTime = Date.now();
 
-      setAnalyzingText('Running inference...');
+      setAnalyzingText('Analyzing image…');
 
-      const systemPrompt = getSystemPrompt(useCase);
+      const customPrompt = await getCustomSystemPrompt(useCase);
+      const systemPrompt = customPrompt || getSystemPrompt(useCase);
 
       const run = completion({
-        modelId: modelIdStr,
+        modelId: loadedModelIdStr,
         history: [
           { role: 'system', content: systemPrompt },
           {
@@ -123,8 +127,10 @@ export default function CameraScreen() {
         ],
         stream: false,
       });
+      runRef.current = run;
 
       const final = await run.final;
+      runRef.current = null;
       const endTime = Date.now();
       const totalMs = endTime - startTime;
 
@@ -135,26 +141,23 @@ export default function CameraScreen() {
       let parsedResult: ScanResult;
 
       if (jsonStart >= 0 && jsonEnd > jsonStart) {
-        const jsonStr = text.substring(jsonStart, jsonEnd + 1);
-        parsedResult = JSON.parse(jsonStr);
+        try {
+          const jsonStr = text.substring(jsonStart, jsonEnd + 1);
+          const parsed = JSON.parse(jsonStr);
+          parsedResult = { ...parsed, type: useCase } as ScanResult;
+        } catch {
+          parsedResult = { type: useCase, _rawText: text } as ScanResult;
+        }
       } else {
-        parsedResult = { type: useCase } as ScanResult;
+        parsedResult = { type: useCase, _rawText: text || 'No response from model.' } as ScanResult;
       }
-
-      parsedResult = { ...parsedResult, type: useCase } as ScanResult;
 
       const stats = final.stats;
       const ttftMs = stats?.timeToFirstToken || totalMs;
       const tokensPredicted = stats?.generatedTokens || 0;
+      const tokensPerSec = stats?.tokensPerSecond;
 
-      await logInference(
-        useCase,
-        modelInfo.name,
-        ttftMs,
-        totalMs,
-        tokensPredicted
-      );
-
+      await logInference(useCase, modelInfo.name, ttftMs, totalMs, tokensPredicted);
       await updateScanStreak();
 
       const historyItem = {
@@ -167,8 +170,7 @@ export default function CameraScreen() {
       };
       await addHistoryItem(historyItem);
 
-      await unloadModel({ modelId: modelIdStr });
-      savedFile.delete();
+      await unloadModel({ modelId: loadedModelIdStr! });
 
       setIsAnalyzing(false);
 
@@ -176,10 +178,20 @@ export default function CameraScreen() {
         result: parsedResult,
         useCase,
         modelId,
+        imagePath: savedFile.uri,
+        inferenceMs: totalMs,
+        tokensPerSec,
+        modelName: modelInfo.name,
       });
     } catch (err) {
+      runRef.current = null;
+      if (typeof loadedModelIdStr === 'string') {
+        await unloadModel({ modelId: loadedModelIdStr }).catch(() => {});
+      }
       setIsAnalyzing(false);
-      navigation.goBack();
+      if (!(err instanceof InferenceCancelledError)) {
+        navigation.goBack();
+      }
     }
   };
 
@@ -212,7 +224,12 @@ export default function CameraScreen() {
         <View style={styles.topBar}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            onPress={() => {
+              if (runRef.current) {
+                void cancel({ requestId: runRef.current.requestId }).catch(() => {});
+              }
+              navigation.goBack();
+            }}
           >
             <Text style={styles.backText}>← Back</Text>
           </TouchableOpacity>
@@ -272,13 +289,17 @@ function getUseCaseLabel(useCase: UseCase): string {
 }
 
 function getModelDisplayName(modelId: string): string {
-  const modelNames: Record<string, string> = {
-    'smolvlm2-500m': 'SmolVLM2-500M',
-    'medpsy-1.7b': 'MedPsy-1.7B',
-    'medpsy-4b': 'MedPsy-4B',
-    'qwen2.5-vl-3b': 'Qwen2.5-VL-3B',
-  };
-  return modelNames[modelId] || modelId;
+  const known = AVAILABLE_MODELS.find((m) => m.id === modelId);
+  if (known) return known.name;
+  if (modelId.startsWith('custom-') || modelId.startsWith('loaded-')) return 'Custom Model';
+  return modelId;
+}
+
+async function findModelById(modelId: string): Promise<ModelInfo | null> {
+  const downloaded = await getDownloadedModels();
+  const local = downloaded.find((m) => m.id === modelId);
+  if (local) return local;
+  return AVAILABLE_MODELS.find((m) => m.id === modelId) || null;
 }
 
 const styles = StyleSheet.create({

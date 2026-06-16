@@ -24,6 +24,9 @@ export const USE_CASES: UseCaseInfo[] = [
 export interface ModelInfo {
   id: string;
   name: string;
+  description?: string;
+  badge?: string;
+  badgeColor?: string;
   size: string;
   sizeBytes: number;
   modelSrc: string;
@@ -41,6 +44,12 @@ export interface DownloadedModel extends ModelInfo {
 
 export type ScanResult = FoodResult | PlantResult | TextResult | HealthResult | CodeResult | ObjectResult;
 
+export interface ScanStats {
+  inferenceMs: number;
+  tokensPerSec?: number;
+  modelName: string;
+}
+
 export interface FoodResult {
   type: 'food';
   foodName: string;
@@ -48,9 +57,12 @@ export interface FoodResult {
   protein: number;
   carbs: number;
   fat: number;
+  fiber?: number;
   healthRating: number;
+  servingSize?: string;
   ingredients: string[];
   funFact: string;
+  _rawText?: string;
 }
 
 export interface PlantResult {
@@ -59,10 +71,12 @@ export interface PlantResult {
   scientificName: string;
   careLevel: string;
   wateringFrequency: string;
+  sunlight?: string;
   toxic: boolean;
   toxicTo: string[];
   tips: string[];
   funFact: string;
+  _rawText?: string;
 }
 
 export interface TextResult {
@@ -72,6 +86,7 @@ export interface TextResult {
   detectedLanguage: string;
   translation?: string;
   documentType: string;
+  _rawText?: string;
 }
 
 export interface HealthResult {
@@ -79,6 +94,7 @@ export interface HealthResult {
   analysis: string;
   keyInformation: string;
   disclaimer: string;
+  _rawText?: string;
 }
 
 export interface CodeResult {
@@ -87,13 +103,17 @@ export interface CodeResult {
   explanation: string;
   bugs: string[];
   suggestions: string[];
+  _rawText?: string;
 }
 
 export interface ObjectResult {
   type: 'object';
   objectName: string;
+  category?: string;
   description: string;
+  estimatedValue?: string;
   funFact: string;
+  _rawText?: string;
 }
 
 export interface InferenceLog {

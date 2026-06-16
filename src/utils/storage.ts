@@ -9,11 +9,12 @@ const KEYS = {
   DOWNLOADED_MODELS: '@peek_downloaded_models',
   SCAN_STREAK: '@peek_scan_streak',
   HF_TOKEN: 'peek_hf_token',
+  CUSTOM_PROMPTS: '@peek_custom_prompts',
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
-  accelerator: 'gpu',
+  accelerator: 'cpu',
   responseLength: 'balanced',
   huggingFaceToken: '',
 };
@@ -158,6 +159,12 @@ export async function clearHistory(): Promise<void> {
   await AsyncStorage.setItem(KEYS.HISTORY, JSON.stringify([]));
 }
 
+export async function clearHistoryByCategory(useCase: string): Promise<void> {
+  const history = await getHistory();
+  const filtered = history.filter((item) => item.useCase !== useCase);
+  await AsyncStorage.setItem(KEYS.HISTORY, JSON.stringify(filtered));
+}
+
 export async function getInferenceLogs(): Promise<InferenceLog[]> {
   try {
     const data = await AsyncStorage.getItem(KEYS.INFERENCE_LOGS);
@@ -232,9 +239,53 @@ export async function isModelDownloaded(): Promise<boolean> {
   return models.length > 0;
 }
 
+export async function hasOnboarded(): Promise<boolean> {
+  try {
+    const val = await AsyncStorage.getItem('@peek_onboarded');
+    return val === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export async function markOnboarded(): Promise<void> {
+  await AsyncStorage.setItem('@peek_onboarded', 'true');
+}
+
+export async function getCustomSystemPrompt(useCase: string): Promise<string | null> {
+  try {
+    const data = await AsyncStorage.getItem(KEYS.CUSTOM_PROMPTS);
+    if (!data) return null;
+    const map = JSON.parse(data) as Record<string, string>;
+    return map[useCase] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setCustomSystemPrompt(useCase: string, prompt: string): Promise<void> {
+  try {
+    const data = await AsyncStorage.getItem(KEYS.CUSTOM_PROMPTS);
+    const map = data ? (JSON.parse(data) as Record<string, string>) : {};
+    map[useCase] = prompt;
+    await AsyncStorage.setItem(KEYS.CUSTOM_PROMPTS, JSON.stringify(map));
+  } catch {}
+}
+
+export async function clearCustomSystemPrompt(useCase: string): Promise<void> {
+  try {
+    const data = await AsyncStorage.getItem(KEYS.CUSTOM_PROMPTS);
+    if (!data) return;
+    const map = JSON.parse(data) as Record<string, string>;
+    delete map[useCase];
+    await AsyncStorage.setItem(KEYS.CUSTOM_PROMPTS, JSON.stringify(map));
+  } catch {}
+}
+
 export async function clearAllData(): Promise<void> {
-  const keys = Object.values(KEYS);
+  const keys = [...Object.values(KEYS), '@peek_onboarded'];
   for (const key of keys) {
     await AsyncStorage.removeItem(key);
   }
 }
+

@@ -8,6 +8,7 @@ import { ThemeMode, ScanResult, UseCase } from '../types';
 import { getTheme } from '../theme';
 
 import SplashScreen from '../screens/SplashScreen';
+import OnboardingScreen from '../screens/OnboardingScreen';
 import HomeScreen from '../screens/HomeScreen';
 import ModelsScreen from '../screens/ModelsScreen';
 import CameraScreen from '../screens/CameraScreen';
@@ -35,9 +36,10 @@ export const useThemeContext = () => useContext(ThemeContext);
 
 type RootStackParamList = {
   Splash: undefined;
+  Onboarding: undefined;
   MainTabs: { screen?: string } | undefined;
   Camera: { useCase: UseCase; modelId: string };
-  Result: { result: ScanResult; useCase: string; modelId: string };
+  Result: { result: ScanResult; useCase: string; modelId: string; imagePath?: string; inferenceMs?: number; tokensPerSec?: number; modelName?: string };
   Chat: { result: ScanResult; useCase: string; modelId: string };
   Settings: undefined;
 };
@@ -159,6 +161,7 @@ export default function AppNavigator() {
           }}
         >
           <Stack.Screen name="Splash" component={SplashScreen} />
+          <Stack.Screen name="Onboarding" component={OnboardingScreen} />
           <Stack.Screen name="MainTabs" component={MainTabs} />
           <Stack.Screen name="Camera" component={CameraScreen} />
           <Stack.Screen name="Result" component={ResultScreen} />
