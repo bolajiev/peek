@@ -1,10 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import { View, Text, StyleSheet, Animated, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { isModelDownloaded, initModelsDirectory, syncModelsFromDisk, hasOnboarded } from '../utils/storage';
-import { PeekLogo } from '../components/PeekLogo';
 
 export default function SplashScreen() {
   const navigation = useNavigation<any>();
@@ -43,7 +42,11 @@ export default function SplashScreen() {
           { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
         ]}
       >
-        <PeekLogo size={100} color={theme.accent} pulse />
+        <Image
+          source={require('../../peeklogo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
         <Text style={[styles.title, { color: theme.accent }]}>Peek</Text>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
           AI-Powered Camera
@@ -65,6 +68,11 @@ const styles = StyleSheet.create({
   },
   inner: {
     alignItems: 'center',
+  },
+  logo: {
+    width: 110,
+    height: 110,
+    borderRadius: 28,
   },
   title: {
     fontSize: 52,

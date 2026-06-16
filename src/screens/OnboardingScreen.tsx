@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   ScrollView,
   Animated,
+  Image,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { markOnboarded } from '../utils/storage';
-import { PeekLogo } from '../components/PeekLogo';
 
 const FEATURES = [
   {
@@ -63,7 +63,11 @@ export default function OnboardingScreen() {
       >
         {/* Hero */}
         <View style={styles.hero}>
-          <PeekLogo size={110} color={theme.accent} pulse />
+          <Image
+            source={require('../../peeklogo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <Text style={[styles.appName, { color: theme.accent }]}>Peek</Text>
           <Text style={[styles.tagline, { color: theme.text }]}>
             AI that sees what you see
@@ -142,6 +146,11 @@ const styles = StyleSheet.create({
     paddingTop: 80,
     paddingBottom: 40,
     paddingHorizontal: 32,
+  },
+  logo: {
+    width: 110,
+    height: 110,
+    borderRadius: 28,
   },
   appName: {
     fontSize: 52,

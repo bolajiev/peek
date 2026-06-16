@@ -4,11 +4,11 @@
     "slug": "peek",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./peeklogo.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./peeklogo.png",
       "resizeMode": "contain",
       "backgroundColor": "#0A0A0A"
     },
@@ -18,7 +18,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./peeklogo.png",
         "backgroundColor": "#0A0A0A"
       },
       "edgeToEdgeEnabled": true,
