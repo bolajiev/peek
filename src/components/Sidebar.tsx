@@ -4,7 +4,6 @@ import { getTheme } from '../theme';
 import { useTheme, useThemeToggle } from '../navigation/AppNavigator';
 import { getHistory } from '../utils/storage';
 import { HistoryItem } from '../types';
-import { IconSearch } from './Icons';
 
 interface Props {
   onClose: () => void;
@@ -48,9 +47,7 @@ export default function Sidebar({ onClose, onNavigate }: Props) {
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <View style={styles.logoRow}>
-          <View style={[styles.logoIcon, { backgroundColor: theme.accent }]}>
-            <IconSearch size={14} color="#000" />
-          </View>
+          <Image source={require('../../peeklogo.png')} style={styles.logoImg} />
           <Text style={[styles.logoText, { color: theme.text }]}>Peek</Text>
         </View>
         <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
@@ -136,7 +133,7 @@ const styles = StyleSheet.create({
     paddingTop: 56, paddingHorizontal: 18, paddingBottom: 16, borderBottomWidth: 1,
   },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  logoIcon: { width: 30, height: 30, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  logoImg: { width: 30, height: 30, borderRadius: 15 },
   logoText: { fontSize: 17, fontWeight: '700', letterSpacing: -0.3 },
   closeIcon: { fontSize: 18, fontWeight: '600', padding: 4 },
   scroll: { flex: 1 },

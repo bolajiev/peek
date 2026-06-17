@@ -134,15 +134,7 @@ export default function AppNavigator() {
               headerShadowVisible: false, headerBackTitle: '',
             }}
           />
-          <Stack.Screen
-            name="Settings"
-            component={SettingsScreen}
-            options={{
-              headerShown: true, title: 'Settings', animation: 'slide_from_right',
-              headerStyle: { backgroundColor: theme.background }, headerTintColor: theme.text,
-              headerShadowVisible: false, headerBackTitle: '',
-            }}
-          />
+          <Stack.Screen name="Settings" component={SettingsScreen} options={{ animation: 'slide_from_right' }} />
         </Stack.Navigator>
       </NavigationContainer>
     </ThemeContext.Provider>

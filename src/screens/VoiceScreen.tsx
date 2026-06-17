@@ -5,7 +5,7 @@ import {
 import { Audio } from 'expo-av';
 import { Paths, File } from 'expo-file-system';
 import {
-  loadModel, transcribe, completion, textToSpeech,
+  loadModel, unloadModel, transcribe, completion, textToSpeech,
   WHISPER_EN_BASE_Q8_0, TTS_EN_SUPERTONIC_Q4_0, InferenceCancelledError,
 } from '@qvac/sdk';
 import { useNavigation } from '@react-navigation/native';
@@ -27,14 +27,15 @@ export default function VoiceScreen() {
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [status, setStatus] = useState('Tap to speak');
-  const [llmModelId, setLlmModelId] = useState<string | null>(null);
+  const [status, setStatus] = useState('Loading voice models...');
+  const [initError, setInitError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   const recordingRef = useRef<Audio.Recording | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const whisperIdRef = useRef<string>('');
   const ttsIdRef = useRef<string>('');
+  const llmIdRef = useRef<string | null>(null);
   const indeterminatePulse = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
@@ -49,27 +50,43 @@ export default function VoiceScreen() {
     ]));
     pulse.start();
     init().then(() => pulse.stop());
-    return () => { stopPulse(); cleanupSound(); };
+    return () => {
+      stopPulse();
+      cleanupSound();
+      if (llmIdRef.current) unloadModel({ modelId: llmIdRef.current }).catch(() => {});
+    };
   }, []);
 
   const init = async () => {
     try {
-      setStatus('Loading voice models...');
+      setStatus('Loading speech models...');
       const [wId, tId] = await Promise.all([
         loadModel({ modelSrc: WHISPER_EN_BASE_Q8_0 }),
         loadModel({ modelSrc: TTS_EN_SUPERTONIC_Q4_0 }),
       ]);
       whisperIdRef.current = wId;
       ttsIdRef.current = tId;
+
       const models = await getDownloadedModels();
-      const defaultId = await getDefaultModelId();
-      const m = defaultId ? models.find(x => x.id === defaultId) ?? models[0] : models[0];
-      if (m) setLlmModelId(m.id);
+      if (models.length > 0) {
+        setStatus('Loading language model...');
+        const defaultId = await getDefaultModelId();
+        const m = (defaultId ? models.find(x => x.id === defaultId) : null) ?? models[0];
+        const mid = await loadModel({
+          modelSrc: m.modelSrc,
+          modelType: 'llm',
+          modelConfig: { ctx_size: 2048, device: 'cpu' },
+        });
+        llmIdRef.current = mid;
+      }
+
       setReady(true);
       setStatus('Tap to speak');
-    } catch {
+    } catch (err: any) {
+      const msg = err?.message || err?.toString() || 'Unknown error';
+      setInitError(msg);
       setReady(true);
-      setStatus('Tap to speak');
+      setStatus('Setup failed');
     }
   };
 
@@ -129,16 +146,17 @@ export default function VoiceScreen() {
 
   const respond = async (userText: string, currentTurns: Turn[]) => {
     setPhase('thinking'); setStatus('Thinking...');
-    if (!llmModelId) { setPhase('done'); setStatus('No model — download one from Models first.'); return; }
+    const mid = llmIdRef.current;
+    if (!mid) { setPhase('done'); setStatus('No LLM model — download one from Models first.'); return; }
     try {
-      const docs = await ragQuery(llmModelId, userText, 3);
+      const docs = await ragQuery(mid, userText, 3);
       const ctx = buildRagContext(docs);
       const history = [
         { role: 'system', content: SYSTEM + ctx },
         ...currentTurns.map(t => ({ role: t.role, content: t.text })),
       ];
       let full = '';
-      const run = completion({ modelId: llmModelId, history, stream: true });
+      const run = completion({ modelId: mid, history, stream: true });
       for await (const ev of run.events) {
         const e = ev as any;
         if (e.type === 'contentDelta') full += e.text;
@@ -226,7 +244,11 @@ export default function VoiceScreen() {
         {turns.length === 0 ? (
           <View style={styles.empty}>
             <Text style={[styles.emptyTitle, { color: theme.text }]}>Voice AI</Text>
-            <Text style={[styles.emptySub, { color: theme.textSecondary }]}>Speak naturally. Peek listens, thinks, and talks back — fully on device.</Text>
+            {initError ? (
+              <Text style={[styles.emptySub, { color: theme.error }]}>{initError}</Text>
+            ) : (
+              <Text style={[styles.emptySub, { color: theme.textSecondary }]}>Speak naturally. Peek listens, thinks, and talks back — fully on device.</Text>
+            )}
           </View>
         ) : turns.map((t, i) => (
           <View key={i} style={[styles.turn, t.role === 'user' ? styles.right : styles.left]}>

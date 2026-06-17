@@ -37,6 +37,7 @@ export default function ChatScreen() {
   const [modelLoading, setModelLoading] = useState(true);
   const [loadProgress, setLoadProgress] = useState(0);
   const [noModel, setNoModel] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
   const currentRunRef = useRef<any>(null);
@@ -75,7 +76,9 @@ export default function ChatScreen() {
         onProgress: (p: { percentage: number }) => setLoadProgress(p.percentage),
       });
       modelIdRef.current = mid;
-    } catch {
+    } catch (err: any) {
+      const msg = err?.message || err?.toString() || 'Unknown error';
+      setLoadError(msg);
       setNoModel(true);
     } finally {
       setModelLoading(false);
@@ -198,7 +201,7 @@ export default function ChatScreen() {
 
       {/* Body */}
       {noModel ? (
-        <NoModelState theme={theme} onGoModels={() => navigation.navigate('Models')} />
+        <NoModelState theme={theme} error={loadError} onGoModels={() => navigation.navigate('Models')} onRetry={() => { setNoModel(false); setLoadError(null); loadOnMount(); }} />
       ) : messages.length === 0 ? (
         <EmptyState theme={theme} />
       ) : (
@@ -343,13 +346,20 @@ function EmptyState({ theme }: any) {
   );
 }
 
-function NoModelState({ theme, onGoModels }: any) {
+function NoModelState({ theme, error, onGoModels, onRetry }: any) {
   return (
     <View style={styles.emptyState}>
-      <Text style={[styles.emptyTitle, { color: theme.text }]}>No model yet</Text>
-      <Text style={[styles.emptySub, { color: theme.textSecondary }]}>Download an AI model to start chatting.</Text>
-      <TouchableOpacity style={[styles.goModelBtn, { backgroundColor: theme.accent }]} onPress={onGoModels}>
-        <Text style={[styles.goModelText, { color: theme.accentFg }]}>Download Model</Text>
+      <Text style={[styles.emptyTitle, { color: theme.text }]}>{error ? 'Load Failed' : 'No model yet'}</Text>
+      <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
+        {error ? error : 'Download an AI model to start chatting.'}
+      </Text>
+      {error ? (
+        <TouchableOpacity style={[styles.goModelBtn, { backgroundColor: theme.accent }]} onPress={onRetry}>
+          <Text style={[styles.goModelText, { color: theme.accentFg }]}>Retry</Text>
+        </TouchableOpacity>
+      ) : null}
+      <TouchableOpacity style={[styles.goModelBtn, { backgroundColor: error ? theme.card : theme.accent, borderWidth: error ? 1 : 0, borderColor: theme.border }]} onPress={onGoModels}>
+        <Text style={[styles.goModelText, { color: error ? theme.text : theme.accentFg }]}>Manage Models</Text>
       </TouchableOpacity>
     </View>
   );

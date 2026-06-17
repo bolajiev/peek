@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated,
   Dimensions, PanResponder, Image,
@@ -57,19 +57,18 @@ export default function HomeScreen() {
   const { open: openSidebar } = useSidebar();
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // FAB drag state
-  const fabPos = useRef({ x: 20, y: SH - 120 }).current;
+  // FAB drag state — use useState so position update triggers re-render
+  const [fabPos, setFabPos] = useState({ x: 20, y: SH - 120 });
+  const fabPosRef = useRef({ x: 20, y: SH - 120 });
   const fabTranslate = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0 });
-  const fabRef = useRef({ x: fabPos.x, y: fabPos.y });
 
   const panResponder = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onPanResponderGrant: (e) => {
       isDragging.current = false;
       dragStart.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
-      fabTranslate.setOffset({ x: 0, y: 0 });
       fabTranslate.setValue({ x: 0, y: 0 });
     },
     onPanResponderMove: (e) => {
@@ -79,15 +78,16 @@ export default function HomeScreen() {
       fabTranslate.setValue({ x: dx, y: dy });
     },
     onPanResponderRelease: (e, g) => {
-      fabTranslate.flattenOffset();
       if (!isDragging.current) {
         fabTranslate.setValue({ x: 0, y: 0 });
         (navigation as any).navigate('QuickChat');
       } else {
-        fabRef.current = {
-          x: Math.max(12, Math.min(fabRef.current.x + g.dx, SW - 180)),
-          y: Math.max(60, Math.min(fabRef.current.y + g.dy, SH - 100)),
+        const newPos = {
+          x: Math.max(12, Math.min(fabPosRef.current.x + g.dx, SW - 180)),
+          y: Math.max(60, Math.min(fabPosRef.current.y + g.dy, SH - 100)),
         };
+        fabPosRef.current = newPos;
+        setFabPos(newPos);
         fabTranslate.setValue({ x: 0, y: 0 });
       }
     },
@@ -168,8 +168,8 @@ export default function HomeScreen() {
           {
             backgroundColor: theme.card,
             borderColor: theme.border,
-            left: fabRef.current.x,
-            top: fabRef.current.y,
+            left: fabPos.x,
+            top: fabPos.y,
             transform: fabTranslate.getTranslateTransform(),
           },
         ]}

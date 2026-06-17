@@ -25,6 +25,8 @@ export default function QuickChatScreen() {
   const [loading, setLoading] = useState(true);
   const [loadProgress, setLoadProgress] = useState(0);
   const [isTyping, setIsTyping] = useState(false);
+  const [noModel, setNoModel] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const modelIdRef = useRef<string | null>(null);
   const runRef = useRef<any>(null);
@@ -42,7 +44,7 @@ export default function QuickChatScreen() {
     setLoading(true);
     try {
       const models = await getDownloadedModels();
-      if (!models.length) { setLoading(false); return; }
+      if (!models.length) { setNoModel(true); setLoading(false); return; }
       const defaultId = await getDefaultModelId();
       const model = (defaultId ? models.find(m => m.id === defaultId) : null) ?? models[0];
       setModelName(model.name);
@@ -55,7 +57,11 @@ export default function QuickChatScreen() {
         onProgress: (p: { percentage: number }) => setLoadProgress(p.percentage),
       });
       modelIdRef.current = mid;
-    } catch {}
+    } catch (err: any) {
+      const msg = err?.message || err?.toString() || 'Unknown error';
+      setLoadError(msg);
+      setNoModel(true);
+    }
     setLoading(false);
   };
 
@@ -138,7 +144,24 @@ export default function QuickChatScreen() {
         </View>
       ) : null}
 
+      {/* No model / error state */}
+      {noModel && !loading && (
+        <View style={styles.noModelBox}>
+          <Text style={[styles.noModelTitle, { color: theme.text }]}>{loadError ? 'Load Failed' : 'No Model'}</Text>
+          <Text style={[styles.noModelSub, { color: theme.textSecondary }]}>{loadError || 'Download a model first to use Quick Chat.'}</Text>
+          {loadError && (
+            <TouchableOpacity style={[styles.retryBtn, { backgroundColor: theme.accent }]} onPress={() => { setNoModel(false); setLoadError(null); loadOnMount(); }}>
+              <Text style={[styles.retryBtnText, { color: '#000' }]}>Retry</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={[styles.retryBtn, { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border }]} onPress={() => navigation.navigate('Models')}>
+            <Text style={[styles.retryBtnText, { color: theme.text }]}>Manage Models</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Messages */}
+      {!noModel && (
       <ScrollView
         ref={scrollRef}
         style={styles.messages}
@@ -168,8 +191,10 @@ export default function QuickChatScreen() {
         ))}
         <View style={{ height: 12 }} />
       </ScrollView>
+      )}
 
       {/* Input */}
+      {!noModel && (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={[styles.inputWrap, { borderTopColor: theme.border }]}>
           <TextInput
@@ -195,6 +220,7 @@ export default function QuickChatScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+      )}
     </View>
   );
 }
@@ -239,4 +265,15 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20,
     justifyContent: 'center', alignItems: 'center',
   },
+  noModelBox: {
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 32, gap: 12,
+  },
+  noModelTitle: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  noModelSub: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  retryBtn: {
+    paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14, marginTop: 4,
+    minWidth: 160, alignItems: 'center',
+  },
+  retryBtnText: { fontSize: 15, fontWeight: '700' },
 });
