@@ -178,7 +178,7 @@ export default function ScanScreen() {
       setIsAnalyzing(false);
       setPreviewUri(null);
       Animated.timing(analyzeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
-      if (!(err instanceof InferenceCancelledError)) navigation.navigate('Chat');
+      if (!(err instanceof InferenceCancelledError)) navigation.goBack();
     }
   };
 
@@ -200,7 +200,7 @@ export default function ScanScreen() {
 
   const handleBack = () => {
     if (runRef.current) void cancel({ requestId: runRef.current.requestId }).catch(() => {});
-    navigation.navigate('Chat');
+    navigation.goBack();
   };
 
   if (!permission?.granted) {

@@ -8,8 +8,9 @@ import {
   loadModel, transcribe, completion, textToSpeech,
   WHISPER_EN_BASE_Q8_0, TTS_EN_SUPERTONIC_Q4_0, InferenceCancelledError,
 } from '@qvac/sdk';
+import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
-import { useTheme, useSidebar } from '../navigation/AppNavigator';
+import { useTheme } from '../navigation/AppNavigator';
 import { getDownloadedModels, getDefaultModelId } from '../utils/storage';
 import { ragQuery, buildRagContext } from '../utils/ragService';
 
@@ -20,9 +21,9 @@ interface Turn { role: 'user' | 'assistant'; text: string; }
 const SYSTEM = 'You are Peek, a private on-device AI assistant. Answer concisely — you are responding to voice, keep answers under 3 sentences unless asked for more.';
 
 export default function VoiceScreen() {
+  const navigation = useNavigation<any>();
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
-  const { open: openSidebar } = useSidebar();
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -200,8 +201,8 @@ export default function VoiceScreen() {
   return (
     <Animated.View style={[styles.container, { backgroundColor: theme.background, opacity: fadeAnim }]}>
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <TouchableOpacity onPress={openSidebar} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <View style={{ gap: 4 }}>{[22, 18, 22].map((w, i) => <View key={i} style={[styles.line, { backgroundColor: theme.text, width: w }]} />)}</View>
+        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Text style={[styles.back, { color: theme.text }]}>←</Text>
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.text }]}>Voice</Text>
         {turns.length > 0
@@ -286,7 +287,7 @@ function MicSVG({ color, active }: { color: string; active: boolean }) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 58, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
-  line: { height: 2, borderRadius: 1 },
+  back: { fontSize: 24, fontWeight: '300' },
   title: { fontSize: 18, fontWeight: '800' },
   clear: { fontSize: 14, fontWeight: '600' },
   scroll: { flex: 1 },

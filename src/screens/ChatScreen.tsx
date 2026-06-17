@@ -8,7 +8,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { loadModel, unloadModel, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { getTheme } from '../theme';
-import { useTheme, useSidebar } from '../navigation/AppNavigator';
+import { useTheme } from '../navigation/AppNavigator';
 import { getDownloadedModels, getDefaultModelId, getSettings } from '../utils/storage';
 import { ragQuery, buildRagContext } from '../utils/ragService';
 import { DownloadedModel } from '../types';
@@ -28,7 +28,6 @@ export default function ChatScreen() {
   const navigation = useNavigation<any>();
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
-  const { open: openSidebar } = useSidebar();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -176,16 +175,12 @@ export default function ChatScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <TouchableOpacity onPress={openSidebar} style={styles.menuBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <View style={styles.menuLines}>
-            {[0, 1, 2].map((i) => (
-              <View key={i} style={[styles.menuLine, { backgroundColor: theme.text, width: i === 1 ? 18 : 22 }]} />
-            ))}
-          </View>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.menuBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Text style={[styles.backBtn, { color: theme.text }]}>←</Text>
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Peek</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Scribe</Text>
           {modelLoading && <Text style={[styles.headerSub, { color: theme.accent }]}>Loading model...</Text>}
           {!modelLoading && modelName && <Text style={[styles.headerSub, { color: theme.textSecondary }]} numberOfLines={1}>{modelName}</Text>}
         </View>
@@ -360,9 +355,8 @@ function NoModelState({ theme, onGoModels }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingTop: 58, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
-  menuBtn: { padding: 4 },
-  menuLines: { gap: 4 },
-  menuLine: { height: 2, borderRadius: 1 },
+  menuBtn: { padding: 4, justifyContent: 'center' },
+  backBtn: { fontSize: 24, fontWeight: '300' },
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', letterSpacing: 0.5 },
   headerSub: { fontSize: 11, marginTop: 1 },

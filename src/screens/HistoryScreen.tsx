@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image, Alert } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getTheme } from '../theme';
-import { useTheme, useSidebar } from '../navigation/AppNavigator';
+import { useTheme } from '../navigation/AppNavigator';
 import { getHistory, clearHistory } from '../utils/storage';
 import { HistoryItem } from '../types';
 
@@ -10,7 +10,6 @@ export default function HistoryScreen() {
   const navigation = useNavigation<any>();
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
-  const { open: openSidebar } = useSidebar();
   const [items, setItems] = useState<HistoryItem[]>([]);
 
   useFocusEffect(useCallback(() => { load(); }, []));
@@ -73,12 +72,8 @@ export default function HistoryScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <TouchableOpacity onPress={openSidebar} style={styles.menuBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <View style={styles.menuLines}>
-            {[22, 18, 22].map((w, i) => (
-              <View key={i} style={[styles.menuLine, { backgroundColor: theme.text, width: w }]} />
-            ))}
-          </View>
+        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Text style={[styles.backBtn, { color: theme.text }]}>←</Text>
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>History</Text>
         {items.length > 0 ? (
@@ -116,9 +111,7 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 58, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
-  menuBtn: { padding: 4 },
-  menuLines: { gap: 4 },
-  menuLine: { height: 2, borderRadius: 1 },
+  backBtn: { fontSize: 24, fontWeight: '300' },
   headerTitle: { fontSize: 18, fontWeight: '800' },
   clearBtn: { fontSize: 14, fontWeight: '600' },
   list: { paddingBottom: 32 },

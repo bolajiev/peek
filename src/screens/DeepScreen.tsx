@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
-import { useTheme, useSidebar } from '../navigation/AppNavigator';
+import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext } from '../utils/ragService';
 import { getDownloadedModels, getDefaultModelId } from '../utils/storage';
 import { completion, loadModel, InferenceCancelledError } from '@qvac/sdk';
@@ -20,7 +20,6 @@ export default function DeepScreen() {
   const navigation = useNavigation<any>();
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
-  const { open: openSidebar } = useSidebar();
 
   const [url, setUrl] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -137,12 +136,8 @@ If the answer isn't in the context, say so clearly.`;
     <Animated.View style={[styles.container, { backgroundColor: theme.background, opacity: fadeAnim }]}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <TouchableOpacity onPress={openSidebar} style={styles.menuBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <View style={{ gap: 4 }}>
-            {[22, 18, 22].map((w, i) => (
-              <View key={i} style={[styles.menuLine, { backgroundColor: theme.text, width: w }]} />
-            ))}
-          </View>
+        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Text style={[styles.backBtn, { color: theme.text }]}>←</Text>
         </TouchableOpacity>
         <View>
           <Text style={[styles.headerTitle, { color: theme.text }]}>Deep</Text>
@@ -281,8 +276,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingTop: 58, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1,
   },
-  menuBtn: { padding: 4 },
-  menuLine: { height: 2, borderRadius: 1 },
+  backBtn: { fontSize: 24, fontWeight: '300' },
   headerTitle: { fontSize: 18, fontWeight: '800', textAlign: 'center' },
   headerSub: { fontSize: 11, fontWeight: '600', textAlign: 'center', maxWidth: 180 },
   clearBtn: { fontSize: 14, fontWeight: '600' },
