@@ -6,7 +6,8 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
-import { loadModel, unloadModel, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
+import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
+import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { getDownloadedModels, getDefaultModelId, getSettings } from '../utils/storage';
@@ -51,10 +52,7 @@ export default function ChatScreen() {
       if (currentRunRef.current) {
         void cancel({ requestId: currentRunRef.current.requestId }).catch(() => {});
       }
-      if (modelIdRef.current) {
-        void unloadModel({ modelId: modelIdRef.current }).catch(() => {});
-        modelIdRef.current = null;
-      }
+      // Don't unload — llmManager keeps model hot for next screen
     };
   }, []);
 
@@ -71,12 +69,7 @@ export default function ChatScreen() {
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
       const modelConfig: any = { ctx_size: 4096, device };
       if (model.projectionModelSrc) modelConfig.projectionModelSrc = model.projectionModelSrc;
-      const mid = await loadModel({
-        modelSrc: model.modelSrc,
-        modelType: 'llm',
-        modelConfig,
-        onProgress: (p: { percentage: number }) => setLoadProgress(p.percentage),
-      });
+      const mid = await llmManager.ensure(model, modelConfig, setLoadProgress);
       modelIdRef.current = mid;
     } catch (err: any) {
       const msg = err?.message || err?.toString() || 'Unknown error';
@@ -352,7 +345,7 @@ function NoModelState({ theme, error, onGoModels, onRetry }: any) {
   return (
     <View style={styles.emptyState}>
       <Text style={[styles.emptyTitle, { color: theme.text }]}>{error ? 'Load Failed' : 'No model yet'}</Text>
-      <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
+      <Text selectable style={[styles.emptySub, { color: error ? theme.error : theme.textSecondary }]}>
         {error ? error : 'Download an AI model to start chatting.'}
       </Text>
       {error ? (

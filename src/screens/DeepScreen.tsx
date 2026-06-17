@@ -8,7 +8,8 @@ import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext } from '../utils/ragService';
 import { getDownloadedModels, getSettings } from '../utils/storage';
-import { completion, loadModel, unloadModel, InferenceCancelledError } from '@qvac/sdk';
+import { completion, loadModel, InferenceCancelledError } from '@qvac/sdk';
+import { llmManager } from '../utils/modelManager';
 import { EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 
 
@@ -41,7 +42,7 @@ export default function DeepScreen() {
     Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     loadLlm();
     return () => {
-      if (llmIdRef.current) unloadModel({ modelId: llmIdRef.current }).catch(() => {});
+      // Don't unload — llmManager keeps model hot
     };
   }, []);
 
@@ -56,12 +57,7 @@ export default function DeepScreen() {
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
       const modelConfig: any = { ctx_size: 4096, device };
       if (model.projectionModelSrc) modelConfig.projectionModelSrc = model.projectionModelSrc;
-      const mid = await loadModel({
-        modelSrc: model.modelSrc,
-        modelType: 'llm',
-        modelConfig,
-        onProgress: (p: { percentage: number }) => setLlmProgress(p.percentage),
-      });
+      const mid = await llmManager.ensure(model, modelConfig, setLlmProgress);
       llmIdRef.current = mid;
       setLlmModelId(mid);
     } catch {

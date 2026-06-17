@@ -5,9 +5,9 @@ import {
 import { Audio } from 'expo-av';
 import { Paths, File } from 'expo-file-system';
 import {
-  loadModel, unloadModel, transcribe, completion, textToSpeech,
-  WHISPER_EN_BASE_Q8_0, TTS_EN_SUPERTONIC_Q4_0, InferenceCancelledError,
+  transcribe, completion, textToSpeech, InferenceCancelledError,
 } from '@qvac/sdk';
+import { llmManager, whisperManager, ttsManager } from '../utils/modelManager';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
@@ -55,7 +55,7 @@ export default function VoiceScreen() {
     return () => {
       stopPulse();
       cleanupSound();
-      if (llmIdRef.current) unloadModel({ modelId: llmIdRef.current }).catch(() => {});
+      // Don't unload — managers keep models hot
     };
   }, []);
 
@@ -63,8 +63,8 @@ export default function VoiceScreen() {
     try {
       setStatus('Loading speech models...');
       const [wId, tId] = await Promise.all([
-        loadModel({ modelSrc: WHISPER_EN_BASE_Q8_0 }),
-        loadModel({ modelSrc: TTS_EN_SUPERTONIC_Q4_0 }),
+        whisperManager.ensure(),
+        ttsManager.ensure(),
       ]);
       whisperIdRef.current = wId;
       ttsIdRef.current = tId;
@@ -73,11 +73,7 @@ export default function VoiceScreen() {
       if (models.length > 0) {
         setStatus('Loading language model...');
         const m = (preselectedModelId ? models.find(x => x.id === preselectedModelId) : null) ?? models[0];
-        const mid = await loadModel({
-          modelSrc: m.modelSrc,
-          modelType: 'llm',
-          modelConfig: { ctx_size: 2048, device: 'cpu' },
-        });
+        const mid = await llmManager.ensure(m, { ctx_size: 2048, device: 'cpu' });
         llmIdRef.current = mid;
       }
 
@@ -246,7 +242,7 @@ export default function VoiceScreen() {
           <View style={styles.empty}>
             <Text style={[styles.emptyTitle, { color: theme.text }]}>Voice AI</Text>
             {initError ? (
-              <Text style={[styles.emptySub, { color: theme.error }]}>{initError}</Text>
+              <Text selectable style={[styles.emptySub, { color: theme.error }]}>{initError}</Text>
             ) : (
               <Text style={[styles.emptySub, { color: theme.textSecondary }]}>Speak naturally. Peek listens, thinks, and talks back — fully on device.</Text>
             )}

@@ -4,7 +4,8 @@ import {
   ScrollView, KeyboardAvoidingView, Platform, Animated,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { loadModel, unloadModel, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
+import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
+import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { getDownloadedModels, getSettings } from '../utils/storage';
@@ -38,7 +39,7 @@ export default function QuickChatScreen() {
     loadOnMount();
     return () => {
       if (runRef.current) cancel({ requestId: runRef.current.requestId }).catch(() => {});
-      if (modelIdRef.current) unloadModel({ modelId: modelIdRef.current }).catch(() => {});
+      // Don't unload — llmManager keeps model hot
     };
   }, []);
 
@@ -53,10 +54,7 @@ export default function QuickChatScreen() {
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
       const modelConfig: any = { ctx_size: 2048, device };
       if (model.projectionModelSrc) modelConfig.projectionModelSrc = model.projectionModelSrc;
-      const mid = await loadModel({
-        modelSrc: model.modelSrc, modelType: 'llm', modelConfig,
-        onProgress: (p: { percentage: number }) => setLoadProgress(p.percentage),
-      });
+      const mid = await llmManager.ensure(model, modelConfig, setLoadProgress);
       modelIdRef.current = mid;
     } catch (err: any) {
       const msg = err?.message || err?.toString() || 'Unknown error';
@@ -149,7 +147,7 @@ export default function QuickChatScreen() {
       {noModel && !loading && (
         <View style={styles.noModelBox}>
           <Text style={[styles.noModelTitle, { color: theme.text }]}>{loadError ? 'Load Failed' : 'No Model'}</Text>
-          <Text style={[styles.noModelSub, { color: theme.textSecondary }]}>{loadError || 'Download a model first to use Quick Chat.'}</Text>
+          <Text selectable style={[styles.noModelSub, { color: loadError ? theme.error : theme.textSecondary }]}>{loadError || 'Download a model first to use Quick Chat.'}</Text>
           {loadError && (
             <TouchableOpacity style={[styles.retryBtn, { backgroundColor: theme.accent }]} onPress={() => { setNoModel(false); setLoadError(null); loadOnMount(); }}>
               <Text style={[styles.retryBtnText, { color: '#000' }]}>Retry</Text>
