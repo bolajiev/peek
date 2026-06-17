@@ -7,8 +7,8 @@ import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext } from '../utils/ragService';
-import { getDownloadedModels, getDefaultModelId } from '../utils/storage';
-import { completion, loadModel, InferenceCancelledError } from '@qvac/sdk';
+import { getDownloadedModels, getDefaultModelId, getSettings } from '../utils/storage';
+import { completion, loadModel, unloadModel, InferenceCancelledError } from '@qvac/sdk';
 import { EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 
 
@@ -27,20 +27,47 @@ export default function DeepScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState('');
   const [llmModelId, setLlmModelId] = useState<string | null>(null);
+  const [llmLoading, setLlmLoading] = useState(true);
+  const [llmProgress, setLlmProgress] = useState(0);
+  const [noModel, setNoModel] = useState(false);
   const embedIdRef = useRef<string>('');
+  const llmIdRef = useRef<string>('');
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     loadLlm();
+    return () => {
+      if (llmIdRef.current) unloadModel({ modelId: llmIdRef.current }).catch(() => {});
+    };
   }, []);
 
   const loadLlm = async () => {
-    const models = await getDownloadedModels();
-    const defaultId = await getDefaultModelId();
-    const model = defaultId ? models.find(m => m.id === defaultId) ?? models[0] : models[0];
-    if (model) setLlmModelId(model.id);
+    setLlmLoading(true);
+    setLlmProgress(0);
+    try {
+      const models = await getDownloadedModels();
+      if (!models.length) { setNoModel(true); setLlmLoading(false); return; }
+      const defaultId = await getDefaultModelId();
+      const model = defaultId ? models.find(m => m.id === defaultId) ?? models[0] : models[0];
+      const settings = await getSettings();
+      const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
+      const modelConfig: any = { ctx_size: 4096, device };
+      if (model.projectionModelSrc) modelConfig.projectionModelSrc = model.projectionModelSrc;
+      const mid = await loadModel({
+        modelSrc: model.modelSrc,
+        modelType: 'llm',
+        modelConfig,
+        onProgress: (p: { percentage: number }) => setLlmProgress(p.percentage),
+      });
+      llmIdRef.current = mid;
+      setLlmModelId(mid);
+    } catch {
+      setNoModel(true);
+    } finally {
+      setLlmLoading(false);
+    }
   };
 
   const handleFetch = async () => {
@@ -150,8 +177,23 @@ If the answer isn't in the context, say so clearly.`;
         ) : <View style={{ width: 40 }} />}
       </View>
 
+      {/* LLM progress bar */}
+      {llmLoading && (
+        <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
+          <View style={[styles.progressFill, { backgroundColor: theme.accent, width: `${llmProgress || 8}%` }]} />
+        </View>
+      )}
+
       {/* URL input or chat */}
-      {phase === 'idle' ? (
+      {noModel ? (
+        <View style={styles.loadingPane}>
+          <Text style={[styles.loadingText, { color: theme.text }]}>No model found</Text>
+          <Text style={[styles.loadingSub, { color: theme.textSecondary }]}>Download a model from Models first</Text>
+          <TouchableOpacity style={[{ backgroundColor: theme.accent, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, marginTop: 8 }]} onPress={() => navigation.navigate('Models')}>
+            <Text style={[{ color: theme.accentFg, fontWeight: '700' }]}>Go to Models</Text>
+          </TouchableOpacity>
+        </View>
+      ) : phase === 'idle' ? (
         <View style={styles.urlPane}>
           <View style={[styles.urlCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <Text style={[styles.urlLabel, { color: theme.text }]}>Research any webpage</Text>
@@ -171,9 +213,9 @@ If the answer isn't in the context, say so clearly.`;
                 onSubmitEditing={handleFetch}
               />
               <TouchableOpacity
-                style={[styles.goBtn, { backgroundColor: theme.accent }]}
+                style={[styles.goBtn, { backgroundColor: !url.trim() || llmLoading ? theme.border : theme.accent }]}
                 onPress={handleFetch}
-                disabled={!url.trim()}
+                disabled={!url.trim() || llmLoading}
               >
                 <Text style={[styles.goBtnText, { color: theme.accentFg }]}>Go</Text>
               </TouchableOpacity>
@@ -272,6 +314,8 @@ function ThinkingDots({ color }: { color: string }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  progressTrack: { height: 3 },
+  progressFill: { height: 3 },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingTop: 58, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1,

@@ -35,6 +35,7 @@ export default function VoiceScreen() {
   const soundRef = useRef<Audio.Sound | null>(null);
   const whisperIdRef = useRef<string>('');
   const ttsIdRef = useRef<string>('');
+  const indeterminatePulse = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -42,7 +43,12 @@ export default function VoiceScreen() {
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-    init();
+    const pulse = Animated.loop(Animated.sequence([
+      Animated.timing(indeterminatePulse, { toValue: 1, duration: 900, useNativeDriver: false }),
+      Animated.timing(indeterminatePulse, { toValue: 0.15, duration: 900, useNativeDriver: false }),
+    ]));
+    pulse.start();
+    init().then(() => pulse.stop());
     return () => { stopPulse(); cleanupSound(); };
   }, []);
 
@@ -210,6 +216,12 @@ export default function VoiceScreen() {
           : <View style={{ width: 40 }} />}
       </View>
 
+      {!ready && (
+        <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
+          <Animated.View style={[styles.progressFill, { backgroundColor: theme.accent, width: indeterminatePulse.interpolate({ inputRange: [0, 1], outputRange: ['15%', '75%'] }) }]} />
+        </View>
+      )}
+
       <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {turns.length === 0 ? (
           <View style={styles.empty}>
@@ -286,6 +298,8 @@ function MicSVG({ color, active }: { color: string; active: boolean }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  progressTrack: { height: 3 },
+  progressFill: { height: 3 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 58, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
   back: { fontSize: 24, fontWeight: '300' },
   title: { fontSize: 18, fontWeight: '800' },

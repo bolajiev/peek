@@ -1,10 +1,10 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, Animated, KeyboardAvoidingView, Platform,
   Image,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { loadModel, unloadModel, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { getTheme } from '../theme';
@@ -33,21 +33,17 @@ export default function ChatScreen() {
   const [input, setInput] = useState('');
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
-  const [loadedModelId, setLoadedModelId] = useState<string | null>(null);
   const [modelName, setModelName] = useState('');
-  const [modelLoading, setModelLoading] = useState(false);
+  const [modelLoading, setModelLoading] = useState(true);
+  const [loadProgress, setLoadProgress] = useState(0);
   const [noModel, setNoModel] = useState(false);
 
   const scrollRef = useRef<ScrollView>(null);
   const currentRunRef = useRef<any>(null);
   const modelIdRef = useRef<string | null>(null);
 
-  useFocusEffect(useCallback(() => {
-    checkModel();
-    return () => {};
-  }, []));
-
   useEffect(() => {
+    loadOnMount();
     return () => {
       if (currentRunRef.current) {
         void cancel({ requestId: currentRunRef.current.requestId }).catch(() => {});
@@ -59,33 +55,31 @@ export default function ChatScreen() {
     };
   }, []);
 
-  const checkModel = async () => {
-    const models = await getDownloadedModels();
-    if (models.length === 0) { setNoModel(true); return; }
-    setNoModel(false);
-    const defaultId = await getDefaultModelId();
-    const model = (defaultId ? models.find((m) => m.id === defaultId) : null) ?? models[0];
-    setModelName(model.name);
-  };
-
-  const ensureModelLoaded = async (): Promise<string | null> => {
-    if (modelIdRef.current) return modelIdRef.current;
+  const loadOnMount = async () => {
     setModelLoading(true);
+    setLoadProgress(0);
     try {
       const models = await getDownloadedModels();
-      if (models.length === 0) return null;
+      if (models.length === 0) { setNoModel(true); setModelLoading(false); return; }
       const defaultId = await getDefaultModelId();
       const model = (defaultId ? models.find((m) => m.id === defaultId) : null) ?? models[0];
+      setModelName(model.name);
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
       const modelConfig: any = { ctx_size: 4096, device };
       if (model.projectionModelSrc) modelConfig.projectionModelSrc = model.projectionModelSrc;
-      const mid = await loadModel({ modelSrc: model.modelSrc, modelType: 'llm', modelConfig });
+      const mid = await loadModel({
+        modelSrc: model.modelSrc,
+        modelType: 'llm',
+        modelConfig,
+        onProgress: (p: { percentage: number }) => setLoadProgress(p.percentage),
+      });
       modelIdRef.current = mid;
-      setLoadedModelId(mid);
-      return mid;
-    } catch { return null; }
-    finally { setModelLoading(false); }
+    } catch {
+      setNoModel(true);
+    } finally {
+      setModelLoading(false);
+    }
   };
 
   const handleSend = async () => {
@@ -106,10 +100,10 @@ export default function ChatScreen() {
 
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
-    const mid = await ensureModelLoaded();
+    const mid = modelIdRef.current;
     if (!mid) {
       setIsTyping(false);
-      setMessages((prev) => [...prev, { id: 'err-' + Date.now(), role: 'assistant', text: 'No model loaded. Download one from the sidebar.' }]);
+      setMessages((prev) => [...prev, { id: 'err-' + Date.now(), role: 'assistant', text: 'Model not ready yet. Wait a moment.' }]);
       return;
     }
 
@@ -181,8 +175,9 @@ export default function ChatScreen() {
 
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, { color: theme.text }]}>Scribe</Text>
-          {modelLoading && <Text style={[styles.headerSub, { color: theme.accent }]}>Loading model...</Text>}
-          {!modelLoading && modelName && <Text style={[styles.headerSub, { color: theme.textSecondary }]} numberOfLines={1}>{modelName}</Text>}
+          <Text style={[styles.headerSub, { color: modelLoading ? theme.accent : theme.textSecondary }]} numberOfLines={1}>
+            {modelLoading ? `Loading${loadProgress > 0 ? ` ${Math.round(loadProgress)}%` : '...'}` : modelName}
+          </Text>
         </View>
 
         <View style={styles.headerRight}>
@@ -193,6 +188,13 @@ export default function ChatScreen() {
           )}
         </View>
       </View>
+
+      {/* Progress bar */}
+      {modelLoading && (
+        <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
+          <View style={[styles.progressFill, { backgroundColor: theme.accent, width: `${loadProgress || 8}%` }]} />
+        </View>
+      )}
 
       {/* Body */}
       {noModel ? (
@@ -230,18 +232,19 @@ export default function ChatScreen() {
             </TouchableOpacity>
             <TextInput
               style={[styles.textInput, { color: theme.text }]}
-              placeholder="Ask anything..."
+              placeholder={modelLoading ? 'Loading model...' : 'Ask anything...'}
               placeholderTextColor={theme.textSecondary}
               value={input}
               onChangeText={setInput}
               multiline
               maxLength={2000}
               returnKeyType="default"
+              editable={!modelLoading}
             />
             <TouchableOpacity
-              style={[styles.sendBtn, { backgroundColor: (input.trim() || attachedImage) ? theme.accent : theme.border }]}
+              style={[styles.sendBtn, { backgroundColor: (input.trim() || attachedImage) && !modelLoading ? theme.accent : theme.border }]}
               onPress={handleSend}
-              disabled={(!input.trim() && !attachedImage) || isTyping}
+              disabled={(!input.trim() && !attachedImage) || isTyping || modelLoading}
               activeOpacity={0.8}
             >
               <Text style={[styles.sendIcon, { color: (input.trim() || attachedImage) ? theme.accentFg : theme.textSecondary }]}>↑</Text>
@@ -354,6 +357,8 @@ function NoModelState({ theme, onGoModels }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  progressTrack: { height: 3 },
+  progressFill: { height: 3 },
   header: { flexDirection: 'row', alignItems: 'center', paddingTop: 58, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
   menuBtn: { padding: 4, justifyContent: 'center' },
   backBtn: { fontSize: 24, fontWeight: '300' },
