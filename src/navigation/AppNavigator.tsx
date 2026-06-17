@@ -18,6 +18,7 @@ import HistoryScreen from '../screens/HistoryScreen';
 import VoiceScreen from '../screens/VoiceScreen';
 import DeepScreen from '../screens/DeepScreen';
 import RelayScreen from '../screens/RelayScreen';
+import QuickChatScreen from '../screens/QuickChatScreen';
 import ResultScreen from '../screens/ResultScreen';
 import ModelsScreen from '../screens/ModelsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
@@ -121,6 +122,7 @@ export default function AppNavigator() {
           <Stack.Screen name="Scribe" component={ChatScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Deep" component={DeepScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Relay" component={RelayScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="QuickChat" component={QuickChatScreen} options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="History" component={HistoryScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Result" component={ResultScreen} options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen
