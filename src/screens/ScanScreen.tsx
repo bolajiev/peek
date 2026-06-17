@@ -27,6 +27,7 @@ export default function ScanScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const preselectedModelId: string | undefined = route.params?.modelId;
+  const launchMode: 'camera' | 'gallery' = route.params?.mode ?? 'camera';
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
   const [permission, requestPermission] = useCameraPermissions();
@@ -47,9 +48,14 @@ export default function ScanScreen() {
   const lastPinchDist = useRef<number | null>(null);
   const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const didAutoLaunch = useRef(false);
   useFocusEffect(React.useCallback(() => {
-    if (!permission?.granted) requestPermission();
-  }, [permission]));
+    if (!permission?.granted) { requestPermission(); return; }
+    if (launchMode === 'gallery' && !didAutoLaunch.current) {
+      didAutoLaunch.current = true;
+      handleGallery();
+    }
+  }, [permission, launchMode]));
 
   useEffect(() => {
     const pulse = Animated.loop(Animated.sequence([

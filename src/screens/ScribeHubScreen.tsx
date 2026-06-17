@@ -1,23 +1,14 @@
 import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { IconRelay, IconDevice, IconBack } from '../components/Icons';
-import Svg, { Path } from 'react-native-svg';
+import { IconScribe, IconChat, IconBack } from '../components/Icons';
 
-function IconDelegation({ size = 18, color = 'white', strokeWidth = 2 }: { size?: number; color?: string; strokeWidth?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.36 12 19.79 19.79 0 0 1 1.19 3.38 2 2 0 0 1 3.17 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.09 8.91" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
-
-const soon = () => Alert.alert('Coming Soon', 'Peek Relay is in active development. Stay tuned!');
-
-export default function RelayScreen() {
+export default function ScribeHubScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const modelId: string | undefined = route.params?.modelId;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -28,7 +19,6 @@ export default function RelayScreen() {
 
   return (
     <Animated.View style={[styles.root, { backgroundColor: theme.background, opacity: fadeAnim }]}>
-      {/* Header */}
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <IconBack size={18} color={theme.accent} />
@@ -37,57 +27,53 @@ export default function RelayScreen() {
           <View style={[styles.brandDot, { backgroundColor: theme.accent }]} />
           <Text style={[styles.brandName, { color: theme.text }]}>Peek</Text>
         </View>
-        <View style={[styles.betaBadge, { borderColor: theme.accent + '55', backgroundColor: theme.accent + '18' }]}>
-          <Text style={[styles.betaText, { color: theme.accent }]}>Beta</Text>
-        </View>
+        <View style={{ width: 44 }} />
       </View>
 
-      {/* Hero */}
       <View style={[styles.hero, { borderBottomColor: theme.border }]}>
         <View style={[styles.heroIcon, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
-          <IconRelay size={26} color={theme.text} strokeWidth={1.6} />
+          <IconScribe size={26} color={theme.text} strokeWidth={1.6} />
         </View>
-        <Text style={[styles.title, { color: theme.text }]}>Peek Relay</Text>
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Offload heavy tasks to a nearby device over P2P.</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Peek Scribe</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Draft, edit, and chat — no cloud needed.</Text>
       </View>
 
-      {/* Action cards */}
       <View style={styles.body}>
         <TouchableOpacity
           style={[styles.actionCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-          onPress={soon}
+          onPress={() => navigation.navigate('ScribeChat', { modelId, mode: 'document' })}
           activeOpacity={0.72}
         >
           <View style={[styles.actionIcon, { backgroundColor: theme.cardAlt }]}>
-            <IconDevice size={18} color={theme.text} />
+            <IconScribe size={18} color={theme.text} />
           </View>
           <View style={styles.actionText}>
-            <Text style={[styles.actionTitle, { color: theme.text }]}>Find Nearby Device</Text>
-            <Text style={[styles.actionSub, { color: theme.textSecondary }]}>Discover devices on same network</Text>
+            <Text style={[styles.actionTitle, { color: theme.text }]}>New Document</Text>
+            <Text style={[styles.actionSub, { color: theme.textSecondary }]}>Start writing with AI assistance</Text>
           </View>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.actionCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-          onPress={soon}
+          onPress={() => navigation.navigate('ScribeChat', { modelId, mode: 'chat' })}
           activeOpacity={0.72}
         >
           <View style={[styles.actionIcon, { backgroundColor: theme.cardAlt }]}>
-            <IconDelegation size={18} color={theme.text} />
+            <IconChat size={18} color={theme.text} />
           </View>
           <View style={styles.actionText}>
-            <Text style={[styles.actionTitle, { color: theme.text }]}>Delegation Log</Text>
-            <Text style={[styles.actionSub, { color: theme.textSecondary }]}>View past relayed inference tasks</Text>
+            <Text style={[styles.actionTitle, { color: theme.text }]}>Open Chat</Text>
+            <Text style={[styles.actionSub, { color: theme.textSecondary }]}>Ask, refine, brainstorm</Text>
           </View>
         </TouchableOpacity>
       </View>
 
       <TouchableOpacity
         style={[styles.cta, { backgroundColor: theme.accent }]}
-        onPress={soon}
+        onPress={() => navigation.navigate('ScribeChat', { modelId, mode: 'document' })}
         activeOpacity={0.85}
       >
-        <Text style={[styles.ctaText, { color: theme.accentFg }]}>Scan for Devices</Text>
+        <Text style={[styles.ctaText, { color: theme.accentFg }]}>Start Writing</Text>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -102,9 +88,10 @@ const styles = StyleSheet.create({
   brand: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   brandDot: { width: 7, height: 7, borderRadius: 3.5 },
   brandName: { fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
-  betaBadge: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
-  betaText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
-  hero: { paddingHorizontal: 20, paddingTop: 28, paddingBottom: 20, borderBottomWidth: 1, gap: 6 },
+  hero: {
+    paddingHorizontal: 20, paddingTop: 28, paddingBottom: 20,
+    borderBottomWidth: 1, gap: 6,
+  },
   heroIcon: {
     width: 52, height: 52, borderRadius: 16, borderWidth: 1,
     justifyContent: 'center', alignItems: 'center', marginBottom: 10,

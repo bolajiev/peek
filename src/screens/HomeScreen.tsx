@@ -25,8 +25,8 @@ interface Module {
   title: string;
   desc: string;
   icon: (color: string) => React.ReactNode;
-  disabled?: boolean;
   fullWidth?: boolean;
+  skipPicker?: boolean;
   filterFn?: (m: DownloadedModel) => boolean;
 }
 
@@ -41,9 +41,10 @@ const MODULES: Module[] = [
     filterFn: isVision,
   },
   {
-    id: 'Voice', screen: 'Voice', label: 'Any Model', title: 'Peek Voice',
+    id: 'Voice', screen: 'Voice', label: 'Whisper · Built-in', title: 'Peek Voice',
     desc: 'Transcribe and summarize audio',
     icon: (c) => <IconVoice size={20} color={c} />,
+    skipPicker: true,
   },
   {
     id: 'Scribe', screen: 'Scribe', label: 'Any Model', title: 'Peek Scribe',
@@ -59,7 +60,7 @@ const MODULES: Module[] = [
     id: 'Relay', screen: 'Relay', label: 'P2P · Beta', title: 'Peek Relay',
     desc: 'Offload heavy tasks to a nearby device',
     icon: (c) => <IconRelay size={20} color={c} />,
-    disabled: true, fullWidth: true,
+    fullWidth: true, skipPicker: true,
   },
 ];
 
@@ -118,6 +119,10 @@ export default function HomeScreen() {
   }, []);
 
   const handleModuleTap = async (mod: Module) => {
+    if (mod.skipPicker) {
+      navigation.navigate(mod.screen);
+      return;
+    }
     const all = await getDownloadedModels();
     const compatible = mod.filterFn ? all.filter(mod.filterFn) : all;
     if (compatible.length === 0) {
@@ -208,14 +213,15 @@ export default function HomeScreen() {
           <TouchableOpacity
             key={mod.id}
             style={[styles.cardFull, { backgroundColor: theme.card, borderColor: theme.border }]}
-            activeOpacity={1}
+            onPress={() => handleModuleTap(mod)}
+            activeOpacity={0.72}
           >
             <View style={[styles.cardIcon, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
-              {mod.icon(theme.textSecondary)}
+              {mod.icon(theme.text)}
             </View>
             <View style={styles.cardFullBody}>
               <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>{mod.label}</Text>
-              <Text style={[styles.cardTitle, { color: theme.textSecondary }]}>{mod.title}</Text>
+              <Text style={[styles.cardTitle, { color: theme.text }]}>{mod.title}</Text>
               <Text style={[styles.cardDesc, { color: theme.textSecondary }]} numberOfLines={1}>{mod.desc}</Text>
             </View>
             <View style={[styles.betaBadge, { borderColor: theme.accent + '44', backgroundColor: theme.accent + '18' }]}>
@@ -291,7 +297,7 @@ const styles = StyleSheet.create({
   cardFull: {
     borderRadius: 16, borderWidth: 1, padding: 16,
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    marginTop: CARD_GAP, opacity: 0.5,
+    marginTop: CARD_GAP,
   },
   cardFullBody: { flex: 1, gap: 4 },
   cardIcon: {

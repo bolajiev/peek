@@ -3,22 +3,16 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Animated, ScrollView, Alert,
 } from 'react-native';
 import { Audio } from 'expo-av';
-import { Paths, File } from 'expo-file-system';
-import {
-  transcribe, completion, textToSpeech, InferenceCancelledError,
-} from '@qvac/sdk';
-import { llmManager, whisperManager, ttsManager } from '../utils/modelManager';
+import * as DocumentPicker from 'expo-document-picker';
+import { transcribe, completion, InferenceCancelledError } from '@qvac/sdk';
+import { whisperManager, llmManager } from '../utils/modelManager';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getDownloadedModels } from '../utils/storage';
-import { ragQuery, buildRagContext } from '../utils/ragService';
+import { getDownloadedModels, getSettings } from '../utils/storage';
+import { IconVoice, IconUpload, IconMic, IconBack } from '../components/Icons';
 
-type Phase = 'idle' | 'recording' | 'transcribing' | 'thinking' | 'speaking' | 'done';
-
-interface Turn { role: 'user' | 'assistant'; text: string; }
-
-const SYSTEM = 'You are Peek, a private on-device AI assistant. Answer concisely — you are responding to voice, keep answers under 3 sentences unless asked for more.';
+type Phase = 'idle' | 'recording' | 'transcribing' | 'transcript' | 'summarizing';
 
 export default function VoiceScreen() {
   const navigation = useNavigation<any>();
@@ -28,313 +22,356 @@ export default function VoiceScreen() {
   const theme = getTheme(themeMode);
 
   const [phase, setPhase] = useState<Phase>('idle');
-  const [turns, setTurns] = useState<Turn[]>([]);
-  const [status, setStatus] = useState('Loading voice models...');
+  const [transcript, setTranscript] = useState('');
+  const [summary, setSummary] = useState('');
   const [initError, setInitError] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
-
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const whisperIdRef = useRef<string>('');
-  const ttsIdRef = useRef<string>('');
-  const llmIdRef = useRef<string | null>(null);
-  const indeterminatePulse = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
+  const [recordingTime, setRecordingTime] = useState(0);
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scrollRef = useRef<ScrollView>(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-    const pulse = Animated.loop(Animated.sequence([
-      Animated.timing(indeterminatePulse, { toValue: 1, duration: 900, useNativeDriver: false }),
-      Animated.timing(indeterminatePulse, { toValue: 0.15, duration: 900, useNativeDriver: false }),
-    ]));
-    pulse.start();
-    init().then(() => pulse.stop());
-    return () => {
-      stopPulse();
-      cleanupSound();
-      // Don't unload — managers keep models hot
-    };
+    Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }).start();
+    whisperManager.ensure().catch(() => {});
+    return () => { cleanupRecording(); };
   }, []);
 
-  const init = async () => {
-    try {
-      setStatus('Loading speech models...');
-      const [wId, tId] = await Promise.all([
-        whisperManager.ensure(),
-        ttsManager.ensure(),
-      ]);
-      whisperIdRef.current = wId;
-      ttsIdRef.current = tId;
-
-      const models = await getDownloadedModels();
-      if (models.length > 0) {
-        setStatus('Loading language model...');
-        const m = (preselectedModelId ? models.find(x => x.id === preselectedModelId) : null) ?? models[0];
-        const mid = await llmManager.ensure(m, { ctx_size: 2048, device: 'cpu' });
-        llmIdRef.current = mid;
-      }
-
-      setReady(true);
-      setStatus('Tap to speak');
-    } catch (err: any) {
-      const msg = err?.message || err?.toString() || 'Unknown error';
-      setInitError(msg);
-      setReady(true);
-      setStatus('Setup failed');
+  const cleanupRecording = async () => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (recordingRef.current) {
+      await recordingRef.current.stopAndUnloadAsync().catch(() => {});
+      recordingRef.current = null;
     }
   };
 
   const startPulse = () => {
-    pulseLoop.current = Animated.loop(Animated.sequence([
-      Animated.timing(pulseAnim, { toValue: 1.18, duration: 600, useNativeDriver: true }),
-      Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+    pulseLoopRef.current = Animated.loop(Animated.sequence([
+      Animated.timing(pulseAnim, { toValue: 1.15, duration: 500, useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
     ]));
-    pulseLoop.current.start();
-  };
-  const stopPulse = () => { pulseLoop.current?.stop(); pulseAnim.setValue(1); };
-
-  const cleanupSound = async () => {
-    if (soundRef.current) { await soundRef.current.unloadAsync().catch(() => {}); soundRef.current = null; }
+    pulseLoopRef.current.start();
   };
 
-  const handleMic = async () => {
+  const stopPulse = () => {
+    pulseLoopRef.current?.stop();
+    pulseAnim.setValue(1);
+  };
+
+  const handleUpload = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'audio/*',
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    await doTranscribe(result.assets[0].uri);
+  };
+
+  const handleRecord = async () => {
     if (phase === 'recording') { await stopRecording(); return; }
-    if (phase !== 'idle' && phase !== 'done') return;
-    await startRecording();
-  };
-
-  const startRecording = async () => {
     const { granted } = await Audio.requestPermissionsAsync();
-    if (!granted) { Alert.alert('Permission needed', 'Microphone access is required.'); return; }
+    if (!granted) { Alert.alert('Permission needed', 'Microphone access is required to record.'); return; }
     await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
     const rec = new Audio.Recording();
     await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
     await rec.startAsync();
     recordingRef.current = rec;
+    setRecordingTime(0);
+    timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
     setPhase('recording');
-    setStatus('Listening...');
     startPulse();
   };
 
   const stopRecording = async () => {
     stopPulse();
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    const rec = recordingRef.current;
+    if (!rec) return;
+    await rec.stopAndUnloadAsync().catch(() => {});
+    const uri = rec.getURI() ?? '';
+    recordingRef.current = null;
+    if (uri) await doTranscribe(uri);
+  };
+
+  const doTranscribe = async (uri: string) => {
     setPhase('transcribing');
-    setStatus('Transcribing...');
+    setTranscript('');
+    setSummary('');
     try {
-      await recordingRef.current?.stopAndUnloadAsync();
-      const uri = recordingRef.current?.getURI() ?? '';
-      recordingRef.current = null;
-
-      const text: string = await transcribe({ modelId: whisperIdRef.current, audioChunk: uri });
-      const userText = text.trim();
-      if (!userText) { setPhase('idle'); setStatus('Nothing heard — tap to try again'); return; }
-
-      const next: Turn[] = [...turns, { role: 'user', text: userText }];
-      setTurns(next);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
-      await respond(userText, next);
-    } catch {
-      setPhase('idle'); setStatus('Tap to speak');
+      const wId = await whisperManager.ensure();
+      const text: string = await transcribe({ modelId: wId, audioChunk: uri });
+      setTranscript(text.trim() || '(No speech detected)');
+      setPhase('transcript');
+    } catch (err: any) {
+      setInitError(err?.message || 'Transcription failed');
+      setPhase('idle');
     }
   };
 
-  const respond = async (userText: string, currentTurns: Turn[]) => {
-    setPhase('thinking'); setStatus('Thinking...');
-    const mid = llmIdRef.current;
-    if (!mid) { setPhase('done'); setStatus('No LLM model — download one from Models first.'); return; }
+  const handleSummarize = async () => {
+    if (!transcript) return;
+    setPhase('summarizing');
     try {
-      const docs = await ragQuery(mid, userText, 3);
-      const ctx = buildRagContext(docs);
-      const history = [
-        { role: 'system', content: SYSTEM + ctx },
-        ...currentTurns.map(t => ({ role: t.role, content: t.text })),
-      ];
-      let full = '';
-      const run = completion({ modelId: mid, history, stream: true });
-      for await (const ev of run.events) {
-        const e = ev as any;
-        if (e.type === 'contentDelta') full += e.text;
-        else if (e.text) full += e.text;
+      const models = await getDownloadedModels();
+      if (!models.length) {
+        Alert.alert('No model', 'Download an LLM model from Models to use summarization.');
+        setPhase('transcript');
+        return;
       }
-      full = full.trim();
-      const next: Turn[] = [...currentTurns, { role: 'assistant', text: full }];
-      setTurns(next);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
-      await speak(full);
-    } catch (e) {
-      if (!(e instanceof InferenceCancelledError)) { setPhase('done'); setStatus('Tap to speak again'); }
-    }
-  };
-
-  const speak = async (text: string) => {
-    setPhase('speaking'); setStatus('Speaking...');
-    try {
-      const result = textToSpeech({ modelId: ttsIdRef.current, text, stream: false });
-      const pcmNumbers: number[] = await result.buffer;
-      if (!pcmNumbers.length) { setPhase('done'); setStatus('Tap to speak again'); return; }
-
-      // Build WAV file from PCM int16 samples
-      const wavBytes = buildWav(pcmNumbers, 44100);
-      const tmpFile = new File(Paths.cache, 'peek_tts.wav');
-      tmpFile.write(wavBytes);
-
-      await cleanupSound();
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
-      const { sound } = await Audio.Sound.createAsync({ uri: tmpFile.uri });
-      soundRef.current = sound;
-      sound.setOnPlaybackStatusUpdate((s: any) => {
-        if (s.didJustFinish) { setPhase('done'); setStatus('Tap to speak again'); }
+      const m = (preselectedModelId ? models.find(x => x.id === preselectedModelId) : null) ?? models[0];
+      const settings = await getSettings();
+      const mid = await llmManager.ensure(m, {
+        ctx_size: 2048,
+        device: settings.accelerator === 'gpu' ? 'gpu' : 'cpu',
       });
-      await sound.playAsync();
-    } catch {
-      setPhase('done'); setStatus('Tap to speak again');
+      let out = '';
+      const run = completion({
+        modelId: mid,
+        history: [
+          { role: 'system', content: 'Summarize the following transcript concisely in 2-4 bullet points.' },
+          { role: 'user', content: transcript },
+        ],
+        stream: true,
+      });
+      for await (const ev of run.events) {
+        if ((ev as any).type === 'contentDelta') out += (ev as any).text;
+      }
+      setSummary(out.trim() || 'Could not generate summary.');
+      setPhase('transcript');
+    } catch (e) {
+      if (!(e instanceof InferenceCancelledError)) setSummary('Summarization failed.');
+      setPhase('transcript');
     }
   };
 
-  const buildWav = (samples: number[], sampleRate: number): Uint8Array => {
-    const numCh = 1; const bps = 16;
-    const dataBytes = samples.length * 2;
-    const buf = new ArrayBuffer(44 + dataBytes);
-    const view = new DataView(buf);
-    const str = (s: string, o: number) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
-    str('RIFF', 0); view.setUint32(4, 36 + dataBytes, true);
-    str('WAVE', 8); str('fmt ', 12);
-    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, numCh, true);
-    view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * numCh * bps / 8, true);
-    view.setUint16(32, numCh * bps / 8, true); view.setUint16(34, bps, true);
-    str('data', 36); view.setUint32(40, dataBytes, true);
-    const int16 = new Int16Array(buf, 44);
-    for (let i = 0; i < samples.length; i++) {
-      const s = samples[i];
-      // Handle both float [-1,1] and int16 [-32768,32767] input
-      int16[i] = Math.abs(s) <= 1 ? Math.round(s * 32767) : Math.round(s);
-    }
-    return new Uint8Array(buf);
+  const reset = () => {
+    setTranscript(''); setSummary(''); setInitError(null); setPhase('idle');
   };
 
-  const micColor = phase === 'recording' ? theme.error
-    : (phase === 'idle' || phase === 'done') ? theme.accent : theme.textSecondary;
-  const isBusy = phase === 'transcribing' || phase === 'thinking' || phase === 'speaking';
+  const fmtTime = (s: number) =>
+    `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
   return (
-    <Animated.View style={[styles.container, { backgroundColor: theme.background, opacity: fadeAnim }]}>
+    <Animated.View style={[styles.root, { backgroundColor: theme.background, opacity: fadeAnim }]}>
+      {/* Header */}
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={[styles.back, { color: theme.text }]}>←</Text>
+          <IconBack size={18} color={theme.accent} />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: theme.text }]}>Voice</Text>
-        {turns.length > 0
-          ? <TouchableOpacity onPress={() => setTurns([])}><Text style={[styles.clear, { color: theme.textSecondary }]}>Clear</Text></TouchableOpacity>
-          : <View style={{ width: 40 }} />}
+        <View style={styles.brand}>
+          <View style={[styles.brandDot, { backgroundColor: theme.accent }]} />
+          <Text style={[styles.brandName, { color: theme.text }]}>Peek</Text>
+        </View>
+        {phase !== 'idle'
+          ? <TouchableOpacity onPress={reset} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.resetBtn, { color: theme.textSecondary }]}>Reset</Text>
+            </TouchableOpacity>
+          : <View style={{ width: 44 }} />}
       </View>
 
-      {!ready && (
-        <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
-          <Animated.View style={[styles.progressFill, { backgroundColor: theme.accent, width: indeterminatePulse.interpolate({ inputRange: [0, 1], outputRange: ['15%', '75%'] }) }]} />
+      {/* ── Idle ── */}
+      {phase === 'idle' && (
+        <>
+          <View style={[styles.hero, { borderBottomColor: theme.border }]}>
+            <View style={[styles.heroIcon, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
+              <IconVoice size={26} color={theme.text} strokeWidth={1.6} />
+            </View>
+            <Text style={[styles.title, { color: theme.text }]}>Peek Voice</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Upload audio. Get a transcript and summary.</Text>
+            {initError
+              ? <Text selectable style={[styles.errText, { color: theme.error }]}>{initError}</Text>
+              : null}
+          </View>
+
+          <View style={styles.body}>
+            <TouchableOpacity
+              style={[styles.actionCard, { backgroundColor: theme.card, borderColor: theme.border }]}
+              onPress={handleUpload}
+              activeOpacity={0.72}
+            >
+              <View style={[styles.actionIcon, { backgroundColor: theme.cardAlt }]}>
+                <IconUpload size={18} color={theme.text} />
+              </View>
+              <View style={styles.actionText}>
+                <Text style={[styles.actionTitle, { color: theme.text }]}>Upload Audio File</Text>
+                <Text style={[styles.actionSub, { color: theme.textSecondary }]}>MP3, WAV, M4A supported</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionCard, { backgroundColor: theme.card, borderColor: theme.border }]}
+              onPress={handleRecord}
+              activeOpacity={0.72}
+            >
+              <View style={[styles.actionIcon, { backgroundColor: theme.cardAlt }]}>
+                <IconMic size={18} color={theme.text} />
+              </View>
+              <View style={styles.actionText}>
+                <Text style={[styles.actionTitle, { color: theme.text }]}>Record Now</Text>
+                <Text style={[styles.actionSub, { color: theme.textSecondary }]}>Transcribe in real-time on-device</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.cta, { backgroundColor: theme.accent }]}
+            onPress={handleUpload}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.ctaText, { color: theme.accentFg }]}>Upload Audio</Text>
+          </TouchableOpacity>
+        </>
+      )}
+
+      {/* ── Recording ── */}
+      {phase === 'recording' && (
+        <View style={styles.centeredPane}>
+          <Animated.View style={[styles.recordRing, { borderColor: theme.error, transform: [{ scale: pulseAnim }] }]}>
+            <View style={[styles.recordSquare, { backgroundColor: theme.error }]} />
+          </Animated.View>
+          <Text style={[styles.recordTime, { color: theme.text }]}>{fmtTime(recordingTime)}</Text>
+          <Text style={[styles.recordLabel, { color: theme.textSecondary }]}>Recording...</Text>
+          <TouchableOpacity
+            style={[styles.stopBtn, { backgroundColor: theme.error }]}
+            onPress={stopRecording}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.stopBtnText, { color: '#fff' }]}>Stop & Transcribe</Text>
+          </TouchableOpacity>
         </View>
       )}
 
-      <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {turns.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={[styles.emptyTitle, { color: theme.text }]}>Voice AI</Text>
-            {initError ? (
-              <Text selectable style={[styles.emptySub, { color: theme.error }]}>{initError}</Text>
-            ) : (
-              <Text style={[styles.emptySub, { color: theme.textSecondary }]}>Speak naturally. Peek listens, thinks, and talks back — fully on device.</Text>
-            )}
-          </View>
-        ) : turns.map((t, i) => (
-          <View key={i} style={[styles.turn, t.role === 'user' ? styles.right : styles.left]}>
-            <View style={[styles.bubble, t.role === 'user'
-              ? { backgroundColor: theme.accent, borderBottomRightRadius: 4 }
-              : { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1, borderBottomLeftRadius: 4 }]}>
-              <Text style={[styles.bubbleText, { color: t.role === 'user' ? theme.accentFg : theme.text }]}>{t.text}</Text>
-            </View>
-          </View>
-        ))}
-        {isBusy && (
-          <View style={[styles.turn, styles.left]}>
-            <View style={[styles.bubble, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1, borderBottomLeftRadius: 4 }]}>
-              <ThinkDots color={theme.accent} />
-            </View>
-          </View>
-        )}
-        <View style={{ height: 20 }} />
-      </ScrollView>
+      {/* ── Transcribing ── */}
+      {phase === 'transcribing' && (
+        <View style={styles.centeredPane}>
+          <ThinkDots color={theme.accent} />
+          <Text style={[styles.spinLabel, { color: theme.text }]}>Transcribing...</Text>
+          <Text style={[styles.spinSub, { color: theme.textSecondary }]}>Running Whisper on-device</Text>
+        </View>
+      )}
 
-      <View style={[styles.bottom, { borderTopColor: theme.border }]}>
-        <Text style={[styles.status, { color: theme.textSecondary }]}>{status}</Text>
-        <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-          <TouchableOpacity
-            style={[styles.mic, { borderColor: micColor, backgroundColor: phase === 'recording' ? theme.error + '18' : theme.accent + '14' }]}
-            onPress={handleMic}
-            disabled={isBusy || !ready}
-            activeOpacity={0.8}
-          >
-            <MicSVG color={micColor} active={phase === 'recording'} />
-          </TouchableOpacity>
-        </Animated.View>
-        <Text style={[styles.hint, { color: theme.textSecondary }]}>{phase === 'recording' ? 'Tap to stop' : isBusy ? '' : 'Tap to start'}</Text>
-      </View>
+      {/* ── Summarizing ── */}
+      {phase === 'summarizing' && (
+        <View style={styles.centeredPane}>
+          <ThinkDots color={theme.accent} />
+          <Text style={[styles.spinLabel, { color: theme.text }]}>Summarizing...</Text>
+        </View>
+      )}
+
+      {/* ── Transcript ── */}
+      {phase === 'transcript' && (
+        <ScrollView style={styles.resultScroll} contentContainerStyle={styles.resultContent} showsVerticalScrollIndicator={false}>
+          <Text style={[styles.sectionHead, { color: theme.textSecondary }]}>TRANSCRIPT</Text>
+          <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text selectable style={[styles.resultText, { color: theme.text }]}>{transcript}</Text>
+          </View>
+
+          {summary ? (
+            <>
+              <Text style={[styles.sectionHead, { color: theme.textSecondary, marginTop: 20 }]}>SUMMARY</Text>
+              <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <Text selectable style={[styles.resultText, { color: theme.text }]}>{summary}</Text>
+              </View>
+            </>
+          ) : (
+            <TouchableOpacity
+              style={[styles.summarizeBtn, { borderColor: theme.accent, backgroundColor: theme.accent + '14' }]}
+              onPress={handleSummarize}
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.summarizeBtnText, { color: theme.accent }]}>Summarize with AI</Text>
+            </TouchableOpacity>
+          )}
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      )}
     </Animated.View>
   );
 }
 
 function ThinkDots({ color }: { color: string }) {
-  const dots = [useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current];
+  const dots = [
+    useRef(new Animated.Value(0)).current,
+    useRef(new Animated.Value(0)).current,
+    useRef(new Animated.Value(0)).current,
+  ];
   useEffect(() => {
-    const a = dots.map((d, i) => Animated.loop(Animated.sequence([
-      Animated.delay(i * 140),
-      Animated.timing(d, { toValue: -6, duration: 240, useNativeDriver: true }),
-      Animated.timing(d, { toValue: 0, duration: 240, useNativeDriver: true }),
-      Animated.delay(560),
-    ])));
-    a.forEach(x => x.start());
-    return () => a.forEach(x => x.stop());
+    const anims = dots.map((d, i) =>
+      Animated.loop(Animated.sequence([
+        Animated.delay(i * 140),
+        Animated.timing(d, { toValue: -7, duration: 260, useNativeDriver: true }),
+        Animated.timing(d, { toValue: 0, duration: 260, useNativeDriver: true }),
+        Animated.delay(540),
+      ]))
+    );
+    anims.forEach(a => a.start());
+    return () => anims.forEach(a => a.stop());
   }, []);
   return (
-    <View style={{ flexDirection: 'row', gap: 5, paddingVertical: 4 }}>
-      {dots.map((d, i) => <Animated.View key={i} style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: color, transform: [{ translateY: d }] }} />)}
-    </View>
-  );
-}
-
-function MicSVG({ color, active }: { color: string; active: boolean }) {
-  return (
-    <View style={{ width: 34, height: 34, alignItems: 'center', justifyContent: 'center', gap: 3 }}>
-      <View style={{ width: 14, height: 20, borderRadius: 7, borderWidth: 2.5, borderColor: color, justifyContent: 'center', alignItems: 'center' }}>
-        {active && <View style={{ width: 6, height: 10, borderRadius: 3, backgroundColor: color, opacity: 0.7 }} />}
-      </View>
-      <View style={{ width: 20, height: 2, borderRadius: 1, backgroundColor: color }} />
-      <View style={{ width: 2.5, height: 5, borderRadius: 1, backgroundColor: color }} />
+    <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
+      {dots.map((d, i) => (
+        <Animated.View key={i} style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color, transform: [{ translateY: d }] }} />
+      ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  progressTrack: { height: 3 },
-  progressFill: { height: 3 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 58, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
-  back: { fontSize: 24, fontWeight: '300' },
-  title: { fontSize: 18, fontWeight: '800' },
-  clear: { fontSize: 14, fontWeight: '600' },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 20, gap: 10, flexGrow: 1 },
-  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, paddingVertical: 60 },
-  emptyTitle: { fontSize: 26, fontWeight: '900' },
-  emptySub: { fontSize: 15, textAlign: 'center', lineHeight: 22, maxWidth: 260 },
-  turn: { maxWidth: '85%' },
-  left: { alignSelf: 'flex-start' },
-  right: { alignSelf: 'flex-end' },
-  bubble: { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12 },
-  bubbleText: { fontSize: 15, lineHeight: 22 },
-  bottom: { paddingTop: 20, paddingBottom: 44, alignItems: 'center', gap: 12, borderTopWidth: 1 },
-  status: { fontSize: 13, fontWeight: '500' },
-  mic: { width: 86, height: 86, borderRadius: 43, borderWidth: 2.5, justifyContent: 'center', alignItems: 'center' },
-  hint: { fontSize: 12 },
+  root: { flex: 1 },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingTop: 56, paddingHorizontal: 20, paddingBottom: 13, borderBottomWidth: 1,
+  },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  brandDot: { width: 7, height: 7, borderRadius: 3.5 },
+  brandName: { fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
+  resetBtn: { fontSize: 13, fontWeight: '600' },
+  hero: { paddingHorizontal: 20, paddingTop: 28, paddingBottom: 20, borderBottomWidth: 1, gap: 6 },
+  heroIcon: {
+    width: 52, height: 52, borderRadius: 16, borderWidth: 1,
+    justifyContent: 'center', alignItems: 'center', marginBottom: 10,
+  },
+  title: { fontSize: 22, fontWeight: '700', letterSpacing: -0.4 },
+  subtitle: { fontSize: 14 },
+  errText: { fontSize: 12, marginTop: 4 },
+  body: { flex: 1, padding: 20, gap: 12 },
+  actionCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    borderRadius: 14, borderWidth: 1, padding: 16,
+  },
+  actionIcon: {
+    width: 38, height: 38, borderRadius: 10,
+    justifyContent: 'center', alignItems: 'center', flexShrink: 0,
+  },
+  actionText: { flex: 1, gap: 3 },
+  actionTitle: { fontSize: 14, fontWeight: '600' },
+  actionSub: { fontSize: 12 },
+  cta: {
+    marginHorizontal: 20, marginBottom: 44, borderRadius: 14,
+    paddingVertical: 16, alignItems: 'center',
+  },
+  ctaText: { fontSize: 15, fontWeight: '700' },
+  centeredPane: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, gap: 12 },
+  recordRing: {
+    width: 100, height: 100, borderRadius: 50, borderWidth: 3,
+    justifyContent: 'center', alignItems: 'center', marginBottom: 8,
+  },
+  recordSquare: { width: 28, height: 28, borderRadius: 6 },
+  recordTime: { fontSize: 40, fontWeight: '200', letterSpacing: 2 },
+  recordLabel: { fontSize: 14 },
+  stopBtn: { paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14, marginTop: 12 },
+  stopBtnText: { fontSize: 15, fontWeight: '700' },
+  spinLabel: { fontSize: 20, fontWeight: '700' },
+  spinSub: { fontSize: 13 },
+  resultScroll: { flex: 1 },
+  resultContent: { padding: 20, gap: 8 },
+  sectionHead: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 4 },
+  resultBox: { borderRadius: 14, borderWidth: 1, padding: 16 },
+  resultText: { fontSize: 15, lineHeight: 23 },
+  summarizeBtn: {
+    borderWidth: 1, borderRadius: 14, paddingVertical: 14,
+    alignItems: 'center', marginTop: 12,
+  },
+  summarizeBtnText: { fontSize: 15, fontWeight: '700' },
 });

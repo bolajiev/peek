@@ -14,6 +14,8 @@ import OnboardingScreen from '../screens/OnboardingScreen';
 import HomeScreen from '../screens/HomeScreen';
 import ChatScreen from '../screens/ChatScreen';
 import ScanScreen from '../screens/ScanScreen';
+import LensHubScreen from '../screens/LensHubScreen';
+import ScribeHubScreen from '../screens/ScribeHubScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import VoiceScreen from '../screens/VoiceScreen';
 import DeepScreen from '../screens/DeepScreen';
@@ -117,9 +119,11 @@ export default function AppNavigator() {
           <Stack.Screen name="Splash" component={SplashScreen} />
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
           <Stack.Screen name="Main" component={MainScreen} />
-          <Stack.Screen name="Lens" component={ScanScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="Lens" component={LensHubScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="LensScan" component={ScanScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Voice" component={VoiceScreen} options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="Scribe" component={ChatScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="Scribe" component={ScribeHubScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="ScribeChat" component={ChatScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Deep" component={DeepScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Relay" component={RelayScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="QuickChat" component={QuickChatScreen} options={{ animation: 'slide_from_bottom' }} />

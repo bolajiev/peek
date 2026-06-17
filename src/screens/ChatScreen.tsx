@@ -23,12 +23,15 @@ interface Message {
   streaming?: boolean;
 }
 
-const SYSTEM_PROMPT = `You are Peek, a private personal AI assistant. You run entirely on the user's device — no internet, no cloud. Help the user with any question they have. Be concise, accurate, and friendly. If you have context from the user's personal knowledge base, use it naturally.`;
+const SYSTEM_CHAT = `You are Peek, a private personal AI assistant. You run entirely on the user's device — no internet, no cloud. Help the user with any question they have. Be concise, accurate, and friendly. If you have context from the user's personal knowledge base, use it naturally.`;
+const SYSTEM_DOC = `You are Peek Scribe, an on-device AI writing assistant. Help the user draft, edit, and improve text. Keep responses focused on writing quality — suggest structure, tone, word choice, and continuations as needed.`;
 
 export default function ChatScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const preselectedModelId: string | undefined = route.params?.modelId;
+  const mode: 'chat' | 'document' = route.params?.mode ?? 'chat';
+  const SYSTEM_PROMPT = mode === 'document' ? SYSTEM_DOC : SYSTEM_CHAT;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
 
@@ -172,7 +175,7 @@ export default function ChatScreen() {
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Scribe</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>{mode === 'document' ? 'Document' : 'Scribe'}</Text>
           <Text style={[styles.headerSub, { color: modelLoading ? theme.accent : theme.textSecondary }]} numberOfLines={1}>
             {modelLoading ? `Loading${loadProgress > 0 ? ` ${Math.round(loadProgress)}%` : '...'}` : modelName}
           </Text>
@@ -198,7 +201,7 @@ export default function ChatScreen() {
       {noModel ? (
         <NoModelState theme={theme} error={loadError} onGoModels={() => navigation.navigate('Models')} onRetry={() => { setNoModel(false); setLoadError(null); loadOnMount(); }} />
       ) : messages.length === 0 ? (
-        <EmptyState theme={theme} />
+        <EmptyState theme={theme} mode={mode} />
       ) : (
         <ScrollView
           ref={scrollRef}
@@ -314,7 +317,7 @@ function TypingIndicator({ theme }: any) {
   );
 }
 
-function EmptyState({ theme }: any) {
+function EmptyState({ theme, mode }: { theme: any; mode: 'chat' | 'document' }) {
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     Animated.loop(Animated.sequence([
@@ -323,13 +326,15 @@ function EmptyState({ theme }: any) {
     ])).start();
   }, []);
 
-  const chips = ['What is this?', 'Summarize this text', 'What are the calories?', 'Explain this to me'];
+  const chips = mode === 'document'
+    ? ['Draft a paragraph', 'Improve this text', 'Continue my story', 'Write a summary']
+    : ['What is this?', 'Summarize this text', 'What are the calories?', 'Explain this to me'];
 
   return (
     <View style={styles.emptyState}>
       <Animated.Image source={require('../../peeklogo.png')} style={[styles.emptyLogo, { transform: [{ scale: pulse }] }]} resizeMode="contain" />
-      <Text style={[styles.emptyTitle, { color: theme.text }]}>Ask me anything</Text>
-      <Text style={[styles.emptySub, { color: theme.textSecondary }]}>Type a question or attach an image.</Text>
+      <Text style={[styles.emptyTitle, { color: theme.text }]}>{mode === 'document' ? 'Start Writing' : 'Ask me anything'}</Text>
+      <Text style={[styles.emptySub, { color: theme.textSecondary }]}>{mode === 'document' ? 'Describe what you want to write.' : 'Type a question or attach an image.'}</Text>
       <View style={styles.chipsRow}>
         {chips.map((c) => (
           <View key={c} style={[styles.chip, { backgroundColor: theme.card, borderColor: theme.border }]}>
