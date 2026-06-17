@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Paths, File, Directory } from 'expo-file-system';
 import { HistoryItem, InferenceLog, AppSettings, ThemeMode, Accelerator, ResponseLength, DownloadedModel } from '../types';
+import { AVAILABLE_MODELS } from './models';
 
 const KEYS = {
   SETTINGS: '@peek_settings',
@@ -30,49 +31,24 @@ export async function initModelsDirectory(): Promise<void> {
 
 export async function syncModelsFromDisk(): Promise<DownloadedModel[]> {
   await initModelsDirectory();
-  const dir = getModelsDir();
-  let files: (File | Directory)[] = [];
-  try {
-    files = dir.list();
-  } catch {
-    return [];
-  }
-
-  const ggufFiles = files.filter(
-    (f): f is File => f instanceof File && f.uri.endsWith('.gguf')
-  );
-
-  const stored = await getDownloadedModels();
+  const modelsDir = getModelsDir();
   const synced: DownloadedModel[] = [];
-  const seenUris = new Set<string>();
 
-  for (const file of ggufFiles) {
-    seenUris.add(file.uri);
-    const existing = stored.find((m) => m.downloadedPath === file.uri);
-    if (existing) {
-      synced.push(existing);
-    } else {
-      const name = file.name.replace(/\.gguf$/i, '');
-      synced.push({
-        id: `disk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        name,
-        size: '',
-        sizeBytes: file.size || 0,
-        modelSrc: file.uri,
-        supports: ['food', 'plant', 'text', 'health', 'code', 'object'],
-        downloadedPath: file.uri,
-        isDownloaded: true,
-        isCustom: true,
-      });
-    }
+  for (const model of AVAILABLE_MODELS) {
+    const modelFolder = new Directory(modelsDir, model.id);
+    const modelFile = new File(modelFolder, 'model.gguf');
+    if (!modelFile.exists) continue;
+
+    const mmprojFile = new File(modelFolder, 'mmproj.gguf');
+
+    synced.push({
+      ...model,
+      modelSrc: modelFile.uri,
+      projectionModelSrc: mmprojFile.exists ? mmprojFile.uri : undefined,
+      downloadedPath: modelFile.uri,
+      isDownloaded: true,
+    });
   }
-
-  const kept = stored.filter((m) => {
-    if (m.downloadedPath && m.downloadedPath.startsWith('file://')) {
-      return seenUris.has(m.downloadedPath);
-    }
-    return true;
-  });
 
   await AsyncStorage.setItem(KEYS.DOWNLOADED_MODELS, JSON.stringify(synced));
   return synced;

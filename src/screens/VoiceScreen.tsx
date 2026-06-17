@@ -121,10 +121,9 @@ export default function VoiceScreen() {
       }
       const m = (preselectedModelId ? models.find(x => x.id === preselectedModelId) : null) ?? models[0];
       const settings = await getSettings();
-      const mid = await llmManager.ensure(m, {
-        ctx_size: 2048,
-        device: settings.accelerator === 'gpu' ? 'gpu' : 'cpu',
-      });
+      const modelConfig: any = { ctx_size: 2048, device: settings.accelerator === 'gpu' ? 'gpu' : 'cpu' };
+      if (m.projectionModelSrc) modelConfig.projectionModelSrc = m.projectionModelSrc;
+      const mid = await llmManager.ensure(m, modelConfig);
       let out = '';
       const run = completion({
         modelId: mid,
