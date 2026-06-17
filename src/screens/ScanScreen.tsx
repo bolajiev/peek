@@ -12,7 +12,6 @@ import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { getSettings, getDownloadedModels, getDefaultModelId, addHistoryItem, updateScanStreak } from '../utils/storage';
 import { logInference } from '../utils/auditLogger';
-import { AVAILABLE_MODELS } from '../utils/models';
 import { ModelInfo } from '../types';
 
 const SYSTEM_PROMPT = `You are Peek, a personal AI assistant with vision. Answer the user's question about the image accurately and concisely. Focus only on what they asked. Do not add disclaimers unless medically necessary.`;
@@ -50,11 +49,15 @@ export default function ScanScreen() {
 
   const didAutoLaunch = useRef(false);
   useFocusEffect(React.useCallback(() => {
-    if (!permission?.granted) { requestPermission(); return; }
-    if (launchMode === 'gallery' && !didAutoLaunch.current) {
-      didAutoLaunch.current = true;
-      handleGallery();
+    // Gallery picker doesn't need camera permission — skip the gate
+    if (launchMode === 'gallery') {
+      if (!didAutoLaunch.current) {
+        didAutoLaunch.current = true;
+        handleGallery();
+      }
+      return;
     }
+    if (!permission?.granted) requestPermission();
   }, [permission, launchMode]));
 
   useEffect(() => {
@@ -203,7 +206,12 @@ export default function ScanScreen() {
   const handleGallery = async () => {
     if (isAnalyzing) return;
     const result = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
-    if (!result.canceled && result.assets?.[0]?.uri) await runInference(result.assets[0].uri);
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      await runInference(result.assets[0].uri);
+    } else if (result.canceled && launchMode === 'gallery') {
+      // Came here specifically for gallery — go back to hub on cancel
+      navigation.goBack();
+    }
   };
 
   const handleBack = () => {
