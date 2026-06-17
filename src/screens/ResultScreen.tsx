@@ -13,6 +13,7 @@ interface RouteParams {
   inferenceMs?: number;
   tokensPerSec?: number;
   modelName?: string;
+  error?: string;
 }
 
 export default function ResultScreen() {
@@ -53,78 +54,103 @@ export default function ResultScreen() {
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Image */}
-        {params.imagePath && (
-          <Animated.View style={[styles.imageWrap, { transform: [{ scale: imageScale }], opacity: fade }]}>
-            <Image source={{ uri: params.imagePath }} style={styles.image} resizeMode="cover" />
-            <View style={[styles.imageOverlay, { backgroundColor: theme.background + 'CC' }]} />
+
+        {/* Error state */}
+        {params.error ? (
+          <Animated.View style={[styles.errorCard, { backgroundColor: theme.card, borderColor: theme.border, opacity: fade }]}>
+            <Text style={[styles.errorTitle, { color: theme.text }]}>Something went wrong</Text>
+            <Text style={[styles.errorMsg, { color: theme.textSecondary }]}>{params.error}</Text>
+            <TouchableOpacity
+              style={[styles.continueBtn, { backgroundColor: theme.accent, marginTop: 20 }]}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.continueBtnText, { color: theme.accentFg }]}>Try Again</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.newScanBtn, { borderColor: theme.border }]}
+              onPress={() => navigation.navigate('Models')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.newScanText, { color: theme.textSecondary }]}>Manage Models</Text>
+            </TouchableOpacity>
           </Animated.View>
+        ) : (
+          <>
+            {/* Image */}
+            {params.imagePath && (
+              <Animated.View style={[styles.imageWrap, { transform: [{ scale: imageScale }], opacity: fade }]}>
+                <Image source={{ uri: params.imagePath }} style={styles.image} resizeMode="cover" />
+                <View style={[styles.imageOverlay, { backgroundColor: theme.background + 'CC' }]} />
+              </Animated.View>
+            )}
+
+            <Animated.View style={{ opacity: fade, transform: [{ translateY: slideY }] }}>
+              {/* User question bubble */}
+              <View style={styles.questionWrap}>
+                <View style={[styles.questionBubble, { backgroundColor: theme.accent }]}>
+                  <Text style={[styles.questionText, { color: theme.accentFg }]}>
+                    {params.query || 'What is this?'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* AI answer card */}
+              <View style={[styles.answerCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <View style={styles.answerHeader}>
+                  <View style={[styles.peekDot, { backgroundColor: theme.accent }]} />
+                  <Text style={[styles.answerFrom, { color: theme.textSecondary }]}>Peek</Text>
+                </View>
+                <Text selectable style={[styles.answerText, { color: theme.text }]}>
+                  {params.text || 'No result.'}
+                </Text>
+              </View>
+
+              {/* Stats row */}
+              {(params.inferenceMs || params.tokensPerSec || params.modelName) && (
+                <View style={styles.statsRow}>
+                  {params.modelName && (
+                    <View style={[styles.statChip, { backgroundColor: theme.cardAlt }]}>
+                      <Text style={[styles.statText, { color: theme.textSecondary }]}>{params.modelName}</Text>
+                    </View>
+                  )}
+                  {params.inferenceMs && (
+                    <View style={[styles.statChip, { backgroundColor: theme.cardAlt }]}>
+                      <Text style={[styles.statText, { color: theme.textSecondary }]}>
+                        {(params.inferenceMs / 1000).toFixed(1)}s
+                      </Text>
+                    </View>
+                  )}
+                  {params.tokensPerSec && (
+                    <View style={[styles.statChip, { backgroundColor: theme.cardAlt }]}>
+                      <Text style={[styles.statText, { color: theme.textSecondary }]}>
+                        {params.tokensPerSec.toFixed(0)} tok/s
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Continue in Chat */}
+              <TouchableOpacity
+                style={[styles.continueBtn, { backgroundColor: theme.accent }]}
+                onPress={continueInChat}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.continueBtnText, { color: theme.accentFg }]}>Continue in Chat</Text>
+              </TouchableOpacity>
+
+              {/* New scan */}
+              <TouchableOpacity
+                style={[styles.newScanBtn, { borderColor: theme.border }]}
+                onPress={() => navigation.goBack()}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.newScanText, { color: theme.textSecondary }]}>Scan Again</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </>
         )}
-
-        <Animated.View style={{ opacity: fade, transform: [{ translateY: slideY }] }}>
-          {/* User question bubble */}
-          <View style={styles.questionWrap}>
-            <View style={[styles.questionBubble, { backgroundColor: theme.accent }]}>
-              <Text style={[styles.questionText, { color: theme.accentFg }]}>
-                {params.query || 'What is this?'}
-              </Text>
-            </View>
-          </View>
-
-          {/* AI answer card */}
-          <View style={[styles.answerCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <View style={styles.answerHeader}>
-              <View style={[styles.peekDot, { backgroundColor: theme.accent }]} />
-              <Text style={[styles.answerFrom, { color: theme.textSecondary }]}>Peek</Text>
-            </View>
-            <Text style={[styles.answerText, { color: theme.text }]}>
-              {params.text || 'No result.'}
-            </Text>
-          </View>
-
-          {/* Stats row */}
-          {(params.inferenceMs || params.tokensPerSec || params.modelName) && (
-            <View style={styles.statsRow}>
-              {params.modelName && (
-                <View style={[styles.statChip, { backgroundColor: theme.cardAlt }]}>
-                  <Text style={[styles.statText, { color: theme.textSecondary }]}>{params.modelName}</Text>
-                </View>
-              )}
-              {params.inferenceMs && (
-                <View style={[styles.statChip, { backgroundColor: theme.cardAlt }]}>
-                  <Text style={[styles.statText, { color: theme.textSecondary }]}>
-                    {(params.inferenceMs / 1000).toFixed(1)}s
-                  </Text>
-                </View>
-              )}
-              {params.tokensPerSec && (
-                <View style={[styles.statChip, { backgroundColor: theme.cardAlt }]}>
-                  <Text style={[styles.statText, { color: theme.textSecondary }]}>
-                    {params.tokensPerSec.toFixed(0)} tok/s
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Continue in Chat */}
-          <TouchableOpacity
-            style={[styles.continueBtn, { backgroundColor: theme.accent }]}
-            onPress={continueInChat}
-            activeOpacity={0.85}
-          >
-            <Text style={[styles.continueBtnText, { color: theme.accentFg }]}>Continue in Chat</Text>
-          </TouchableOpacity>
-
-          {/* New scan */}
-          <TouchableOpacity
-            style={[styles.newScanBtn, { borderColor: theme.border }]}
-            onPress={() => navigation.navigate('Main', { screen: 'Scan' })}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.newScanText, { color: theme.textSecondary }]}>New scan</Text>
-          </TouchableOpacity>
-        </Animated.View>
       </ScrollView>
     </View>
   );
@@ -165,4 +191,7 @@ const styles = StyleSheet.create({
   continueBtnText: { fontSize: 16, fontWeight: '800' },
   newScanBtn: { borderRadius: 16, paddingVertical: 14, alignItems: 'center', borderWidth: 1 },
   newScanText: { fontSize: 15, fontWeight: '600' },
+  errorCard: { borderRadius: 20, borderWidth: 1, padding: 24, gap: 8, marginTop: 40 },
+  errorTitle: { fontSize: 20, fontWeight: '700' },
+  errorMsg: { fontSize: 14, lineHeight: 20 },
 });

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { File, Directory } from 'expo-file-system';
 import { createDownloadResumable } from 'expo-file-system/legacy';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { AVAILABLE_MODELS, getHfDownloadUrl } from '../utils/models';
@@ -38,6 +39,9 @@ function formatBytes(bytes: number): string {
 }
 
 export default function ModelsScreen() {
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const autoLaunch = route.params?.autoLaunch as { screen: string; label: string } | undefined;
   const theme = getTheme(useTheme());
   const [downloadedModels, setDownloadedModels] = useState<DownloadedModel[]>([]);
   const [downloading, setDownloading] = useState<Record<string, DownloadPhase>>({});
@@ -133,6 +137,10 @@ export default function ModelsScreen() {
       await saveDownloadedModel(newModel);
       setDownloading((prev) => { const n = { ...prev }; delete n[model.id]; return n; });
       await loadDownloaded();
+      // If opened from HomeScreen with no model, auto-navigate into the module
+      if (autoLaunch) {
+        setTimeout(() => navigation.navigate(autoLaunch.screen, { modelId: newModel.id }), 400);
+      }
     } catch {
       setDownloading((prev) => { const n = { ...prev }; delete n[model.id]; return n; });
       Alert.alert('Download Failed', 'Could not download the model. Check your internet connection and try again.');
@@ -289,6 +297,15 @@ export default function ModelsScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
+        {/* Auto-launch banner: shown when arriving from a module with no model */}
+        {autoLaunch && (
+          <View style={[styles.autoLaunchBanner, { backgroundColor: theme.accent + '18', borderColor: theme.accent + '44' }]}>
+            <Text style={[styles.autoLaunchText, { color: theme.accent }]}>
+              Download a model to use {autoLaunch.label}. It will open automatically when ready.
+            </Text>
+          </View>
+        )}
+
         {downloadedModels.length > 0 && (
           <>
             <View style={styles.sectionHeader}>
@@ -374,4 +391,8 @@ const styles = StyleSheet.create({
   progressDetail: { fontSize: 12 },
   progressTrack: { height: 6, borderRadius: 3, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 3 },
+  autoLaunchBanner: {
+    borderWidth: 1, borderRadius: 12, padding: 14, marginBottom: 16,
+  },
+  autoLaunchText: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
 });

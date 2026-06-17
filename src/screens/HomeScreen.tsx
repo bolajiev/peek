@@ -126,7 +126,11 @@ export default function HomeScreen() {
     const all = await getDownloadedModels();
     const compatible = mod.filterFn ? all.filter(mod.filterFn) : all;
     if (compatible.length === 0) {
-      navigation.navigate('Models');
+      // No compatible model — send to Models with auto-launch context so
+      // downloading a model continues directly into the module
+      navigation.navigate('Models', {
+        autoLaunch: { screen: mod.screen, label: mod.title },
+      });
       return;
     }
     setPickerModule(mod);

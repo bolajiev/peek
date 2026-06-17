@@ -75,7 +75,8 @@ export default function ChatScreen() {
       const mid = await llmManager.ensure(model, modelConfig, setLoadProgress);
       modelIdRef.current = mid;
     } catch (err: any) {
-      const msg = err?.message || err?.toString() || 'Unknown error';
+      const raw = err?.message || err?.toString() || 'Unknown error';
+      const msg = raw.replace(/file:\/\/[^\s,]*/g, '[model]');
       setLoadError(msg);
       setNoModel(true);
     } finally {

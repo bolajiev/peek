@@ -4,16 +4,16 @@ import {
   Animated, ActivityIndicator, Alert,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import * as DocumentPicker from 'expo-document-picker';
+import { Paths, File, Directory } from 'expo-file-system';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext } from '../utils/ragService';
 import { getDownloadedModels, getSettings } from '../utils/storage';
-import { completion, loadModel, InferenceCancelledError } from '@qvac/sdk';
+import { completion, loadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
-import { EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 
-
-type Phase = 'idle' | 'fetching' | 'ingesting' | 'ready' | 'thinking';
+type Phase = 'idle' | 'ingesting' | 'ready' | 'thinking';
 
 interface Message { role: 'user' | 'assistant'; text: string; }
 
@@ -24,7 +24,6 @@ export default function DeepScreen() {
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
 
-  const [url, setUrl] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
   const [sourceTitle, setSourceTitle] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -33,17 +32,14 @@ export default function DeepScreen() {
   const [llmLoading, setLlmLoading] = useState(true);
   const [llmProgress, setLlmProgress] = useState(0);
   const [noModel, setNoModel] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const embedIdRef = useRef<string>('');
-  const llmIdRef = useRef<string>('');
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     loadLlm();
-    return () => {
-      // Don't unload — llmManager keeps model hot
-    };
   }, []);
 
   const loadLlm = async () => {
@@ -58,55 +54,52 @@ export default function DeepScreen() {
       const modelConfig: any = { ctx_size: 4096, device };
       if (model.projectionModelSrc) modelConfig.projectionModelSrc = model.projectionModelSrc;
       const mid = await llmManager.ensure(model, modelConfig, setLlmProgress);
-      llmIdRef.current = mid;
       setLlmModelId(mid);
-    } catch {
+    } catch (err: any) {
+      const raw = err?.message || err?.toString() || 'Unknown error';
+      setLoadError(raw.replace(/file:\/\/[^\s,]*/g, '[model]'));
       setNoModel(true);
     } finally {
       setLlmLoading(false);
     }
   };
 
-  const handleFetch = async () => {
-    const trimmed = url.trim();
-    if (!trimmed) return;
-    if (!trimmed.startsWith('http')) { Alert.alert('Invalid URL', 'Enter a full URL starting with https://'); return; }
+  const handlePickFile = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['text/plain', 'text/markdown', 'application/json', '*/*'],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
 
-    setPhase('fetching');
+    setPhase('ingesting');
     try {
-      // Fetch page as plain text
-      const res = await fetch(trimmed, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-      const html = await res.text();
+      // Copy to stable documents dir before reading
+      const docsDir = new Directory(Paths.document, 'peek', 'deep');
+      docsDir.create({ intermediates: true, idempotent: true });
+      const destFile = new File(docsDir, `doc_${Date.now()}_${asset.name}`);
+      new File(asset.uri).copy(destFile);
 
-      // Strip HTML tags to get plain text
-      const text = html
-        .replace(/<script[\s\S]*?<\/script>/gi, '')
-        .replace(/<style[\s\S]*?<\/style>/gi, '')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 12000); // cap at 12k chars for embedding
+      const srcFile = destFile.exists ? destFile : new File(asset.uri);
+      const content = await srcFile.text();
 
-      if (text.length < 100) throw new Error('Page has too little content');
+      if (!content || content.length < 50) {
+        throw new Error('File appears empty or too short to analyze. Only plain text files are supported.');
+      }
 
-      // Extract title
-      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-      const title = titleMatch ? titleMatch[1].trim() : trimmed;
-      setSourceTitle(title);
+      const truncated = content.slice(0, 20000);
 
-      setPhase('ingesting');
-
-      // Load embedding model and ingest
+      // Load embedding model + ingest
       const embedId = await loadModel({ modelSrc: EMBEDDINGGEMMA_300M_Q8_0 });
       embedIdRef.current = embedId;
-      await ragIngestText(embedId, text, (pct) => {});
+      await ragIngestText(embedId, truncated);
 
+      setSourceTitle(asset.name ?? 'Document');
+      setMessages([{ role: 'assistant', text: `Ready. I've read "${asset.name ?? 'your document'}". Ask me anything about it.` }]);
       setPhase('ready');
-      setMessages([{ role: 'assistant', text: `Ready. I've read "${title}". Ask me anything about it.` }]);
-      setUrl('');
     } catch (e: any) {
       setPhase('idle');
-      Alert.alert('Failed', e.message || 'Could not fetch or process the page. Try a different URL.');
+      Alert.alert('Could not read file', e.message || 'Make sure the file contains readable text.');
     }
   };
 
@@ -125,9 +118,9 @@ export default function DeepScreen() {
       const docs = await ragQuery(embedIdRef.current, q, 5);
       const ctx = buildRagContext(docs);
 
-      const sysPrompt = `You are Peek Deep, a private research assistant. The user has loaded a webpage for analysis.
+      const sysPrompt = `You are Peek Deep, a private research assistant. The user loaded a local document for analysis.
 Answer questions strictly based on the provided context.${ctx}
-If the answer isn't in the context, say so clearly.`;
+If the answer isn't in the context, say so clearly. Never fabricate information.`;
 
       const msgs = [
         { role: 'system', content: sysPrompt },
@@ -137,11 +130,10 @@ If the answer isn't in the context, say so clearly.`;
       let full = '';
       const run = completion({ modelId: llmModelId, history: msgs, stream: true });
       for await (const ev of run.events) {
-        if ((ev as any).text) full += (ev as any).text;
+        if ((ev as any).type === 'contentDelta') full += (ev as any).text;
       }
 
-      const finalMessages: Message[] = [...newMessages, { role: 'assistant', text: full.trim() }];
-      setMessages(finalMessages);
+      setMessages([...newMessages, { role: 'assistant', text: full.trim() || 'No response.' }]);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e) {
       if (!(e instanceof InferenceCancelledError)) {
@@ -152,9 +144,9 @@ If the answer isn't in the context, say so clearly.`;
     }
   };
 
-  const reset = () => { setPhase('idle'); setMessages([]); setSourceTitle(''); setUrl(''); };
+  const reset = () => { setPhase('idle'); setMessages([]); setSourceTitle(''); };
 
-  const isBusy = phase === 'fetching' || phase === 'ingesting' || phase === 'thinking';
+  const isBusy = phase === 'ingesting' || phase === 'thinking';
 
   return (
     <Animated.View style={[styles.container, { backgroundColor: theme.background, opacity: fadeAnim }]}>
@@ -164,75 +156,61 @@ If the answer isn't in the context, say so clearly.`;
           <Text style={[styles.backBtn, { color: theme.text }]}>←</Text>
         </TouchableOpacity>
         <View>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Deep</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Peek Deep</Text>
           {sourceTitle ? <Text style={[styles.headerSub, { color: theme.accent }]} numberOfLines={1}>{sourceTitle}</Text> : null}
         </View>
-        {phase !== 'idle' ? (
-          <TouchableOpacity onPress={reset} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={[styles.clearBtn, { color: theme.textSecondary }]}>Reset</Text>
-          </TouchableOpacity>
-        ) : <View style={{ width: 40 }} />}
+        {phase !== 'idle'
+          ? <TouchableOpacity onPress={reset} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.clearBtn, { color: theme.textSecondary }]}>Reset</Text>
+            </TouchableOpacity>
+          : <View style={{ width: 48 }} />}
       </View>
 
-      {/* LLM progress bar */}
       {llmLoading && (
         <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
           <View style={[styles.progressFill, { backgroundColor: theme.accent, width: `${llmProgress || 8}%` }]} />
         </View>
       )}
 
-      {/* URL input or chat */}
       {noModel ? (
-        <View style={styles.loadingPane}>
-          <Text style={[styles.loadingText, { color: theme.text }]}>No model found</Text>
-          <Text style={[styles.loadingSub, { color: theme.textSecondary }]}>Download a model from Models first</Text>
-          <TouchableOpacity style={[{ backgroundColor: theme.accent, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, marginTop: 8 }]} onPress={() => navigation.navigate('Models')}>
-            <Text style={[{ color: theme.accentFg, fontWeight: '700' }]}>Go to Models</Text>
+        <View style={styles.centeredPane}>
+          <Text style={[styles.loadingText, { color: theme.text }]}>{loadError ? 'Load Failed' : 'No model found'}</Text>
+          <Text selectable style={[styles.loadingSub, { color: loadError ? theme.error : theme.textSecondary }]}>
+            {loadError || 'Download a model from Models first'}
+          </Text>
+          {loadError && (
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme.accent, marginTop: 12 }]} onPress={() => { setNoModel(false); setLoadError(null); loadLlm(); }}>
+              <Text style={[styles.actionBtnText, { color: '#fff' }]}>Retry</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border }]} onPress={() => navigation.navigate('Models')}>
+            <Text style={[styles.actionBtnText, { color: theme.text }]}>Manage Models</Text>
           </TouchableOpacity>
         </View>
       ) : phase === 'idle' ? (
-        <View style={styles.urlPane}>
-          <View style={[styles.urlCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Text style={[styles.urlLabel, { color: theme.text }]}>Research any webpage</Text>
-            <Text style={[styles.urlSub, { color: theme.textSecondary }]}>
-              Paste a URL. Peek fetches the content and lets you ask questions about it — fully on-device.
+        <View style={styles.idlePane}>
+          <View style={[styles.idleCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.idleTitle, { color: theme.text }]}>Research your files</Text>
+            <Text style={[styles.idleSub, { color: theme.textSecondary }]}>
+              Pick a text file from your device. Peek reads it locally — nothing leaves your phone — then answers your questions about it.
             </Text>
-            <View style={[styles.inputRow, { borderColor: theme.border, backgroundColor: theme.background }]}>
-              <TextInput
-                style={[styles.urlInput, { color: theme.text }]}
-                value={url}
-                onChangeText={setUrl}
-                placeholder="https://..."
-                placeholderTextColor={theme.textSecondary}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-                onSubmitEditing={handleFetch}
-              />
-              <TouchableOpacity
-                style={[styles.goBtn, { backgroundColor: !url.trim() || llmLoading ? theme.border : theme.accent }]}
-                onPress={handleFetch}
-                disabled={!url.trim() || llmLoading}
-              >
-                <Text style={[styles.goBtnText, { color: theme.accentFg }]}>Go</Text>
-              </TouchableOpacity>
+            <View style={[styles.supportedBox, { backgroundColor: theme.cardAlt, borderRadius: 10 }]}>
+              <Text style={[styles.supportedLabel, { color: theme.textSecondary }]}>Supported: TXT, MD, JSON, and other plain-text formats</Text>
             </View>
-            <View style={[styles.disclosureBanner, { backgroundColor: theme.cardAlt }]}>
-              <Text style={[styles.disclosureText, { color: theme.textSecondary }]}>
-                Disclosure: Page content is fetched via a standard HTTP request (not AI). All analysis runs on-device via QVAC.
-              </Text>
-            </View>
+            <TouchableOpacity
+              style={[styles.pickBtn, { backgroundColor: llmLoading ? theme.border : theme.accent }]}
+              onPress={handlePickFile}
+              disabled={llmLoading}
+            >
+              <Text style={[styles.pickBtnText, { color: '#fff' }]}>{llmLoading ? 'Loading model…' : 'Choose File'}</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      ) : phase === 'fetching' || phase === 'ingesting' ? (
-        <View style={styles.loadingPane}>
+      ) : phase === 'ingesting' ? (
+        <View style={styles.centeredPane}>
           <ActivityIndicator size="large" color={theme.accent} />
-          <Text style={[styles.loadingText, { color: theme.text }]}>
-            {phase === 'fetching' ? 'Fetching page...' : 'Reading content...'}
-          </Text>
-          <Text style={[styles.loadingSub, { color: theme.textSecondary }]}>
-            {phase === 'ingesting' ? 'Building your private knowledge base' : ''}
-          </Text>
+          <Text style={[styles.loadingText, { color: theme.text }]}>Reading document…</Text>
+          <Text style={[styles.loadingSub, { color: theme.textSecondary }]}>Building your private knowledge base</Text>
         </View>
       ) : (
         <>
@@ -245,7 +223,7 @@ If the answer isn't in the context, say so clearly.`;
                     ? { backgroundColor: theme.accent, borderBottomRightRadius: 4 }
                     : { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1, borderBottomLeftRadius: 4 },
                 ]}>
-                  <Text style={[styles.bubbleText, { color: msg.role === 'user' ? theme.accentFg : theme.text }]}>
+                  <Text selectable style={[styles.bubbleText, { color: msg.role === 'user' ? '#fff' : theme.text }]}>
                     {msg.text}
                   </Text>
                 </View>
@@ -266,18 +244,18 @@ If the answer isn't in the context, say so clearly.`;
               style={[styles.questionInput, { backgroundColor: theme.card, color: theme.text }]}
               value={question}
               onChangeText={setQuestion}
-              placeholder="Ask about this page..."
+              placeholder="Ask about this document…"
               placeholderTextColor={theme.textSecondary}
               onSubmitEditing={handleAsk}
               returnKeyType="send"
               editable={!isBusy}
             />
             <TouchableOpacity
-              style={[styles.sendBtn, { backgroundColor: question.trim() ? theme.accent : theme.cardAlt }]}
+              style={[styles.sendBtn, { backgroundColor: question.trim() && !isBusy ? theme.accent : theme.cardAlt }]}
               onPress={handleAsk}
               disabled={!question.trim() || isBusy}
             >
-              <Text style={[styles.sendBtnText, { color: question.trim() ? theme.accentFg : theme.textSecondary }]}>›</Text>
+              <Text style={[styles.sendBtnText, { color: question.trim() && !isBusy ? '#fff' : theme.textSecondary }]}>›</Text>
             </TouchableOpacity>
           </View>
         </>
@@ -319,21 +297,21 @@ const styles = StyleSheet.create({
   },
   backBtn: { fontSize: 24, fontWeight: '300' },
   headerTitle: { fontSize: 18, fontWeight: '800', textAlign: 'center' },
-  headerSub: { fontSize: 11, fontWeight: '600', textAlign: 'center', maxWidth: 180 },
+  headerSub: { fontSize: 11, fontWeight: '600', textAlign: 'center', maxWidth: 200 },
   clearBtn: { fontSize: 14, fontWeight: '600' },
-  urlPane: { flex: 1, padding: 20, justifyContent: 'center' },
-  urlCard: { borderRadius: 20, borderWidth: 1, padding: 20, gap: 14 },
-  urlLabel: { fontSize: 20, fontWeight: '800' },
-  urlSub: { fontSize: 14, lineHeight: 20 },
-  inputRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1, overflow: 'hidden' },
-  urlInput: { flex: 1, fontSize: 14, paddingHorizontal: 14, paddingVertical: 13 },
-  goBtn: { paddingHorizontal: 20, paddingVertical: 13 },
-  goBtnText: { fontSize: 15, fontWeight: '800' },
-  disclosureBanner: { borderRadius: 10, padding: 12 },
-  disclosureText: { fontSize: 11, lineHeight: 16 },
-  loadingPane: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
-  loadingText: { fontSize: 18, fontWeight: '700' },
-  loadingSub: { fontSize: 13 },
+  centeredPane: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, gap: 12 },
+  loadingText: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
+  loadingSub: { fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  actionBtn: { paddingHorizontal: 24, paddingVertical: 13, borderRadius: 12, minWidth: 160, alignItems: 'center' },
+  actionBtnText: { fontSize: 15, fontWeight: '700' },
+  idlePane: { flex: 1, padding: 20, justifyContent: 'center' },
+  idleCard: { borderRadius: 20, borderWidth: 1, padding: 20, gap: 14 },
+  idleTitle: { fontSize: 20, fontWeight: '800' },
+  idleSub: { fontSize: 14, lineHeight: 20 },
+  supportedBox: { padding: 12 },
+  supportedLabel: { fontSize: 12, lineHeight: 18 },
+  pickBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  pickBtnText: { fontSize: 15, fontWeight: '700' },
   scroll: { flex: 1 },
   scrollContent: { padding: 20, gap: 10, flexGrow: 1 },
   turn: { maxWidth: '85%' },

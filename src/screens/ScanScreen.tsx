@@ -10,7 +10,7 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { loadModel, unloadModel, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getSettings, getDownloadedModels, getDefaultModelId, addHistoryItem, updateScanStreak } from '../utils/storage';
+import { getSettings, getDownloadedModels, getDefaultModelId, addHistoryItem, updateScanStreak, toPath } from '../utils/storage';
 import { logInference } from '../utils/auditLogger';
 import { ModelInfo } from '../types';
 
@@ -116,10 +116,10 @@ export default function ScanScreen() {
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
       const modelConfig: any = { ctx_size: 2048, device };
-      if (modelInfo.projectionModelSrc) modelConfig.projectionModelSrc = modelInfo.projectionModelSrc;
+      if (modelInfo.projectionModelSrc) modelConfig.projectionModelSrc = toPath(modelInfo.projectionModelSrc);
 
       loadedId = await loadModel({
-        modelSrc: modelInfo.modelSrc,
+        modelSrc: toPath(modelInfo.modelSrc),
         modelType: 'llm',
         modelConfig,
         onProgress: (p) => setAnalysisText(`Loading ${p.percentage.toFixed(0)}%`),
@@ -183,13 +183,20 @@ export default function ScanScreen() {
         tokensPerSec,
         modelName: modelInfo.name,
       });
-    } catch (err) {
+    } catch (err: any) {
       runRef.current = null;
       if (typeof loadedId === 'string') await unloadModel({ modelId: loadedId }).catch(() => {});
       setIsAnalyzing(false);
       setPreviewUri(null);
       Animated.timing(analyzeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
-      if (!(err instanceof InferenceCancelledError)) navigation.goBack();
+      if (err instanceof InferenceCancelledError) return;
+      const msg = err?.message?.replace(/file:\/\/[^\s]*/g, '[model file]') ?? 'Analysis failed';
+      navigation.navigate('Result', {
+        text: '',
+        query: question || '',
+        error: msg,
+        modelName: '',
+      });
     }
   };
 

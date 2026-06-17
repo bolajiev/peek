@@ -3,6 +3,11 @@ import { Paths, File, Directory } from 'expo-file-system';
 import { HistoryItem, InferenceLog, AppSettings, ThemeMode, Accelerator, ResponseLength, DownloadedModel } from '../types';
 import { AVAILABLE_MODELS } from './models';
 
+// QVAC SDK expects bare filesystem paths, not file:// URIs.
+export function toPath(uri: string): string {
+  return uri.startsWith('file://') ? uri.slice(7) : uri;
+}
+
 const KEYS = {
   SETTINGS: '@peek_settings',
   HISTORY: '@peek_history',

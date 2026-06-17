@@ -9,7 +9,8 @@ import { whisperManager, llmManager } from '../utils/modelManager';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getDownloadedModels, getSettings } from '../utils/storage';
+import { getDownloadedModels, getSettings, toPath } from '../utils/storage';
+import { Paths, File, Directory } from 'expo-file-system';
 import { IconVoice, IconUpload, IconMic, IconBack } from '../components/Icons';
 
 type Phase = 'idle' | 'recording' | 'transcribing' | 'transcript' | 'summarizing';
@@ -65,7 +66,19 @@ export default function VoiceScreen() {
       copyToCacheDirectory: true,
     });
     if (result.canceled || !result.assets?.[0]) return;
-    await doTranscribe(result.assets[0].uri);
+    const picked = result.assets[0];
+    // Copy to stable documents dir (content:// URIs not accepted by QVAC native layer)
+    try {
+      const recsDir = new Directory(Paths.document, 'peek', 'recordings');
+      recsDir.create({ intermediates: true, idempotent: true });
+      const ext = picked.name?.split('.').pop() ?? 'm4a';
+      const destFile = new File(recsDir, `upload_${Date.now()}.${ext}`);
+      new File(picked.uri).copy(destFile);
+      if (!destFile.exists) throw new Error('Could not copy audio file');
+      await doTranscribe(destFile.uri);
+    } catch {
+      await doTranscribe(picked.uri);
+    }
   };
 
   const handleRecord = async () => {
@@ -88,10 +101,24 @@ export default function VoiceScreen() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     const rec = recordingRef.current;
     if (!rec) return;
-    await rec.stopAndUnloadAsync().catch(() => {});
-    const uri = rec.getURI() ?? '';
     recordingRef.current = null;
-    if (uri) await doTranscribe(uri);
+    // Fully finalize before reading URI — prevents the race where transcribe
+    // is called on a file the encoder hasn't closed yet
+    await rec.stopAndUnloadAsync().catch(() => {});
+    const cacheUri = rec.getURI();
+    if (!cacheUri) { setInitError('Recording produced no file.'); return; }
+
+    // Copy from evictable cache → stable documents dir
+    try {
+      const recsDir = new Directory(Paths.document, 'peek', 'recordings');
+      recsDir.create({ intermediates: true, idempotent: true });
+      const destFile = new File(recsDir, `rec_${Date.now()}.m4a`);
+      new File(cacheUri).copy(destFile);
+      if (!destFile.exists) throw new Error('File copy failed');
+      await doTranscribe(destFile.uri);
+    } catch (err: any) {
+      setInitError(err?.message || 'Could not save recording.');
+    }
   };
 
   const doTranscribe = async (uri: string) => {
@@ -100,7 +127,11 @@ export default function VoiceScreen() {
     setSummary('');
     try {
       const wId = await whisperManager.ensure();
-      const text: string = await transcribe({ modelId: wId, audioChunk: uri });
+      // audioChunk accepts a bare filesystem path string (strip file:// prefix)
+      const text: string = await transcribe({
+        modelId: wId,
+        audioChunk: toPath(uri),
+      });
       setTranscript(text.trim() || '(No speech detected)');
       setPhase('transcript');
     } catch (err: any) {

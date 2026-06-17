@@ -3,6 +3,7 @@ import {
   WHISPER_EN_BASE_Q8_0, TTS_EN_SUPERTONIC_Q4_0,
 } from '@qvac/sdk';
 import { DownloadedModel } from '../types';
+import { toPath } from './storage';
 
 // Keeps the last LLM loaded in memory so screens don't reload every open
 class LLMManager {
@@ -31,12 +32,16 @@ class LLMManager {
       this.qvacId = null;
       this.storageId = null;
     }
-    // Load the new model
+    // Load the new model — QVAC SDK needs bare paths, not file:// URIs
+    const nativeConfig = { ...modelConfig };
+    if (nativeConfig.projectionModelSrc) {
+      nativeConfig.projectionModelSrc = toPath(nativeConfig.projectionModelSrc);
+    }
     this.pendingId = model.id;
     this.pending = loadModel({
-      modelSrc: model.modelSrc,
+      modelSrc: toPath(model.modelSrc),
       modelType: 'llm',
-      modelConfig,
+      modelConfig: nativeConfig,
       onProgress: (p: { percentage: number }) => onProgress?.(p.percentage),
     }).then(id => {
       this.qvacId = id;
