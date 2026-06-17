@@ -5,13 +5,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  TextInput,
   Alert,
   Modal,
 } from 'react-native';
 import { File } from 'expo-file-system';
 import { createDownloadResumable } from 'expo-file-system/legacy';
-import * as DocumentPicker from 'expo-document-picker';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { AVAILABLE_MODELS, getHfDownloadUrl } from '../utils/models';
@@ -53,16 +51,10 @@ export default function ModelsScreen() {
   const theme = getTheme(useTheme());
   const [downloadedModels, setDownloadedModels] = useState<DownloadedModel[]>([]);
   const [downloading, setDownloading] = useState<Record<string, DownloadPhase>>({});
-  const [customUrl, setCustomUrl] = useState('');
-  const [customName, setCustomName] = useState('');
-  const [loadFromDeviceName, setLoadFromDeviceName] = useState('');
-
   const [showTagPicker, setShowTagPicker] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'download' | 'custom' | 'load' | null>(null);
+  const [pendingAction, setPendingAction] = useState<'download' | null>(null);
   const [pendingModel, setPendingModel] = useState<ModelInfo | null>(null);
   const [pendingTags, setPendingTags] = useState<string[]>([]);
-  const [pickedFileUri, setPickedFileUri] = useState<string | null>(null);
-
   useEffect(() => {
     init();
   }, []);
@@ -91,24 +83,11 @@ export default function ModelsScreen() {
     if (!pendingAction) return;
     setShowTagPicker(false);
     const tags = pendingTags;
-
-    switch (pendingAction) {
-      case 'download':
-        if (pendingModel) await startDownload(pendingModel, tags);
-        break;
-      case 'custom':
-        await startCustomDownload(tags);
-        break;
-      case 'load':
-        if (pickedFileUri && loadFromDeviceName.trim()) {
-          await startLoadDevice(pickedFileUri, loadFromDeviceName.trim(), tags);
-        }
-        break;
+    if (pendingAction === 'download' && pendingModel) {
+      await startDownload(pendingModel, tags);
     }
-
     setPendingAction(null);
     setPendingModel(null);
-    setPickedFileUri(null);
   };
 
   const startDownload = async (model: ModelInfo, tags: string[]) => {
@@ -222,132 +201,6 @@ export default function ModelsScreen() {
     setPendingModel(model);
     setPendingAction('download');
     setShowTagPicker(true);
-  };
-
-  const startCustomDownload = async (tags: string[]) => {
-    const token = await getHfToken();
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    getModelsDir().create({ intermediates: true, idempotent: true });
-
-    const customId = `custom-${Date.now()}`;
-    setDownloading((prev) => ({
-      ...prev,
-      [customId]: { phase: 'model', pct: 0, bytesWritten: 0, bytesTotal: 0 },
-    }));
-
-    try {
-      const fileUri = new File(getModelsDir(), 'custom_' + customName + '.gguf').uri;
-
-      const dl = createDownloadResumable(customUrl, fileUri, { headers }, (p) => {
-        const pct = p.totalBytesExpectedToWrite > 0
-          ? Math.round((p.totalBytesWritten / p.totalBytesExpectedToWrite) * 100)
-          : 0;
-        setDownloading((prev) => ({
-          ...prev,
-          [customId]: {
-            phase: 'model',
-            pct,
-            bytesWritten: p.totalBytesWritten,
-            bytesTotal: p.totalBytesExpectedToWrite,
-          },
-        }));
-      });
-
-      const result = await dl.downloadAsync();
-      if (!result) throw new Error('Download cancelled');
-
-      const newModel: DownloadedModel = {
-        id: customId,
-        name: customName,
-        size: formatBytes(result.headers?.['content-length']
-          ? parseInt(result.headers['content-length'], 10)
-          : 0),
-        sizeBytes: 0,
-        modelSrc: result.uri,
-        supports: tags,
-        downloadedPath: result.uri,
-        isDownloaded: true,
-        isCustom: true,
-      };
-      await saveDownloadedModel(newModel);
-      setDownloading((prev) => {
-        const n = { ...prev };
-        delete n[customId];
-        return n;
-      });
-      setCustomUrl('');
-      setCustomName('');
-      await loadDownloaded();
-    } catch {
-      setDownloading((prev) => {
-        const n = { ...prev };
-        delete n[customId];
-        return n;
-      });
-      Alert.alert('Download Failed', 'Could not download the custom model.');
-    }
-  };
-
-  const handleCustomDownload = () => {
-    if (!customUrl || !customName) {
-      Alert.alert('Missing Info', 'Enter a URL and a name for the custom model.');
-      return;
-    }
-    setPendingTags([]);
-    setPendingAction('custom');
-    setShowTagPicker(true);
-  };
-
-  const startLoadDevice = async (srcUri: string, name: string, tags: string[]) => {
-    getModelsDir().create({ intermediates: true, idempotent: true });
-    try {
-      const destFile = new File(getModelsDir(), name + '.gguf');
-      const srcFile = new File(srcUri);
-      srcFile.copy(destFile);
-
-      const newModel: DownloadedModel = {
-        id: `loaded-${Date.now()}`,
-        name,
-        size: '',
-        sizeBytes: 0,
-        modelSrc: destFile.uri,
-        supports: tags,
-        downloadedPath: destFile.uri,
-        isDownloaded: true,
-        isCustom: true,
-      };
-      await saveDownloadedModel(newModel);
-      setLoadFromDeviceName('');
-      await loadDownloaded();
-      Alert.alert('Loaded', `"${name}" is ready to use.`);
-    } catch {
-      Alert.alert('Error', 'Could not load the model file. Make sure it is a valid .gguf file.');
-    }
-  };
-
-  const handleLoadFromDevice = async () => {
-    if (!loadFromDeviceName.trim()) {
-      Alert.alert('Missing Name', 'Enter a name for the model first.');
-      return;
-    }
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: '*/*',
-        copyToCacheDirectory: true,
-      });
-      if (result.canceled || !result.assets?.length) return;
-      const picked = result.assets[0];
-      if (!picked.uri) return;
-
-      setPickedFileUri(picked.uri);
-      setPendingTags([]);
-      setPendingAction('load');
-      setShowTagPicker(true);
-    } catch {
-      Alert.alert('Error', 'Could not pick file.');
-    }
   };
 
   const handleDelete = (modelId: string) => {
@@ -507,59 +360,6 @@ export default function ModelsScreen() {
         </Text>
 
         {AVAILABLE_MODELS.map((m) => renderModelCard(m, false))}
-
-        <View style={[styles.sectionHeader, { marginTop: 32 }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Custom Model</Text>
-        </View>
-        <View style={[styles.customCard, { backgroundColor: theme.card }]}>
-          <Text style={[styles.customHint, { color: theme.textSecondary }]}>
-            Download any GGUF model from a direct URL
-          </Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-            placeholder="Direct GGUF download URL"
-            placeholderTextColor={theme.textSecondary}
-            value={customUrl}
-            onChangeText={setCustomUrl}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TextInput
-            style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-            placeholder="Model name (e.g. My Model)"
-            placeholderTextColor={theme.textSecondary}
-            value={customName}
-            onChangeText={setCustomName}
-          />
-          <TouchableOpacity
-            style={[styles.downloadBtn, { backgroundColor: theme.accent, alignSelf: 'flex-start', marginTop: 8 }]}
-            onPress={handleCustomDownload}
-          >
-            <Text style={[styles.downloadBtnText, { color: theme.background }]}>Download</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={[styles.sectionHeader, { marginTop: 32 }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Load from Device</Text>
-        </View>
-        <View style={[styles.customCard, { backgroundColor: theme.card }]}>
-          <Text style={[styles.customHint, { color: theme.textSecondary }]}>
-            Use a .gguf file already on your phone
-          </Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-            placeholder="Model name (e.g. My Local Model)"
-            placeholderTextColor={theme.textSecondary}
-            value={loadFromDeviceName}
-            onChangeText={setLoadFromDeviceName}
-          />
-          <TouchableOpacity
-            style={[styles.downloadBtn, { backgroundColor: theme.accent, alignSelf: 'flex-start', marginTop: 8 }]}
-            onPress={handleLoadFromDevice}
-          >
-            <Text style={[styles.downloadBtnText, { color: theme.background }]}>Pick File</Text>
-          </TouchableOpacity>
-        </View>
 
         <View style={{ height: 40 }} />
       </ScrollView>

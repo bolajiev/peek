@@ -1,14 +1,17 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated,
-  Dimensions, PanResponder, Image,
+  Dimensions, PanResponder,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme, useSidebar } from '../navigation/AppNavigator';
 import {
   IconLens, IconVoice, IconScribe, IconDeep, IconRelay, IconMenu,
 } from '../components/Icons';
+import ModelPickerSheet from '../components/ModelPickerSheet';
+import { getDownloadedModels, getQuickChatDefaultId, setQuickChatDefaultId } from '../utils/storage';
+import { DownloadedModel } from '../types';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const H_PAD = 12;
@@ -24,27 +27,37 @@ interface Module {
   icon: (color: string) => React.ReactNode;
   disabled?: boolean;
   fullWidth?: boolean;
+  filterFn?: (m: DownloadedModel) => boolean;
 }
+
+// Lens needs a vision model (has projection/mmproj)
+const isVision = (m: DownloadedModel) => !!m.projectionModelSrc;
 
 const MODULES: Module[] = [
   {
-    id: 'Lens', screen: 'Lens', label: '2 Models', title: 'Peek Lens', desc: 'Analyze images with your camera',
+    id: 'Lens', screen: 'Lens', label: 'Vision Models', title: 'Peek Lens',
+    desc: 'Analyze images with your camera',
     icon: (c) => <IconLens size={20} color={c} />,
+    filterFn: isVision,
   },
   {
-    id: 'Voice', screen: 'Voice', label: '1 Model', title: 'Peek Voice', desc: 'Transcribe and summarize audio',
+    id: 'Voice', screen: 'Voice', label: 'Any Model', title: 'Peek Voice',
+    desc: 'Transcribe and summarize audio',
     icon: (c) => <IconVoice size={20} color={c} />,
   },
   {
-    id: 'Scribe', screen: 'Scribe', label: '1 Model', title: 'Peek Scribe', desc: 'Write and edit with on-device AI',
+    id: 'Scribe', screen: 'Scribe', label: 'Any Model', title: 'Peek Scribe',
+    desc: 'Write and edit with on-device AI',
     icon: (c) => <IconScribe size={20} color={c} />,
   },
   {
-    id: 'Deep', screen: 'Deep', label: '2 Models', title: 'Peek Deep', desc: 'Research any topic privately',
+    id: 'Deep', screen: 'Deep', label: 'Any Model', title: 'Peek Deep',
+    desc: 'Research any topic privately',
     icon: (c) => <IconDeep size={20} color={c} />,
   },
   {
-    id: 'Relay', screen: 'Relay', label: 'P2P · Beta', title: 'Peek Relay', desc: 'Offload heavy tasks to a nearby device',
+    id: 'Relay', screen: 'Relay', label: 'P2P · Beta', title: 'Peek Relay',
+    desc: 'Offload heavy tasks to a nearby device',
     icon: (c) => <IconRelay size={20} color={c} />,
     disabled: true, fullWidth: true,
   },
@@ -57,7 +70,14 @@ export default function HomeScreen() {
   const { open: openSidebar } = useSidebar();
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // FAB drag state — use useState so position update triggers re-render
+  // Model picker state
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerModule, setPickerModule] = useState<Module | null>(null);
+  const [pickerModels, setPickerModels] = useState<DownloadedModel[]>([]);
+  const [pickerIsQuickChat, setPickerIsQuickChat] = useState(false);
+  const [pickerDefaultId, setPickerDefaultId] = useState<string | null>(null);
+
+  // FAB drag state
   const [fabPos, setFabPos] = useState({ x: 20, y: SH - 120 });
   const fabPosRef = useRef({ x: 20, y: SH - 120 });
   const fabTranslate = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
@@ -80,7 +100,7 @@ export default function HomeScreen() {
     onPanResponderRelease: (e, g) => {
       if (!isDragging.current) {
         fabTranslate.setValue({ x: 0, y: 0 });
-        (navigation as any).navigate('QuickChat');
+        handleFabTap();
       } else {
         const newPos = {
           x: Math.max(12, Math.min(fabPosRef.current.x + g.dx, SW - 180)),
@@ -96,6 +116,52 @@ export default function HomeScreen() {
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }).start();
   }, []);
+
+  const handleModuleTap = async (mod: Module) => {
+    const all = await getDownloadedModels();
+    const compatible = mod.filterFn ? all.filter(mod.filterFn) : all;
+    if (compatible.length === 0) {
+      navigation.navigate('Models');
+      return;
+    }
+    setPickerModule(mod);
+    setPickerModels(compatible);
+    setPickerIsQuickChat(false);
+    setPickerDefaultId(null);
+    setPickerVisible(true);
+  };
+
+  const handleFabTap = async () => {
+    const all = await getDownloadedModels();
+    if (all.length === 0) {
+      navigation.navigate('Models');
+      return;
+    }
+    // Sort by size — smallest first
+    const sorted = [...all].sort((a, b) => (a.sizeBytes || 0) - (b.sizeBytes || 0));
+    const defaultId = await getQuickChatDefaultId();
+    // If default is set and still downloaded, go straight in
+    if (defaultId && sorted.find(m => m.id === defaultId)) {
+      navigation.navigate('QuickChat', { modelId: defaultId });
+      return;
+    }
+    // Otherwise show picker with smallest pre-selected
+    setPickerModule(null);
+    setPickerModels(sorted);
+    setPickerIsQuickChat(true);
+    setPickerDefaultId(sorted[0]?.id ?? null);
+    setPickerVisible(true);
+  };
+
+  const handlePickerStart = async (model: DownloadedModel, saveDefault: boolean) => {
+    setPickerVisible(false);
+    if (pickerIsQuickChat) {
+      if (saveDefault) await setQuickChatDefaultId(model.id);
+      setTimeout(() => navigation.navigate('QuickChat', { modelId: model.id }), 180);
+    } else if (pickerModule) {
+      setTimeout(() => navigation.navigate(pickerModule.screen, { modelId: model.id }), 180);
+    }
+  };
 
   const grid = MODULES.filter(m => !m.fullWidth);
   const full = MODULES.filter(m => m.fullWidth);
@@ -124,7 +190,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               key={mod.id}
               style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border, width: CARD_W }]}
-              onPress={() => navigation.navigate(mod.screen)}
+              onPress={() => handleModuleTap(mod)}
               activeOpacity={0.72}
             >
               <View style={[styles.cardIcon, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
@@ -178,9 +244,25 @@ export default function HomeScreen() {
         <View style={[styles.fabPulse, { backgroundColor: theme.accent, shadowColor: theme.accent }]} />
         <View>
           <Text style={[styles.fabLabel, { color: theme.text }]}>Quick Chat</Text>
-          <Text style={[styles.fabSub, { color: theme.textSecondary }]}>Loads smallest model</Text>
+          <Text style={[styles.fabSub, { color: theme.textSecondary }]}>Smallest model</Text>
         </View>
       </Animated.View>
+
+      {/* Model Picker Sheet */}
+      <ModelPickerSheet
+        visible={pickerVisible}
+        moduleTitle={pickerIsQuickChat ? 'Quick Chat' : (pickerModule?.title ?? '')}
+        moduleIcon={pickerIsQuickChat
+          ? <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: theme.accent }} />
+          : pickerModule?.icon(theme.text)}
+        models={pickerModels}
+        initialModelId={pickerDefaultId}
+        showSetDefault={pickerIsQuickChat}
+        startLabel={pickerIsQuickChat ? 'Start Chat' : 'Launch'}
+        onStart={handlePickerStart}
+        onClose={() => setPickerVisible(false)}
+        onGetModels={() => { setPickerVisible(false); setTimeout(() => navigation.navigate('Models'), 200); }}
+      />
     </Animated.View>
   );
 }

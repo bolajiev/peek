@@ -3,11 +3,11 @@ import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
   Animated, ActivityIndicator, Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext } from '../utils/ragService';
-import { getDownloadedModels, getDefaultModelId, getSettings } from '../utils/storage';
+import { getDownloadedModels, getSettings } from '../utils/storage';
 import { completion, loadModel, unloadModel, InferenceCancelledError } from '@qvac/sdk';
 import { EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 
@@ -18,6 +18,8 @@ interface Message { role: 'user' | 'assistant'; text: string; }
 
 export default function DeepScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const preselectedModelId: string | undefined = route.params?.modelId;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
 
@@ -49,8 +51,7 @@ export default function DeepScreen() {
     try {
       const models = await getDownloadedModels();
       if (!models.length) { setNoModel(true); setLlmLoading(false); return; }
-      const defaultId = await getDefaultModelId();
-      const model = defaultId ? models.find(m => m.id === defaultId) ?? models[0] : models[0];
+      const model = (preselectedModelId ? models.find(m => m.id === preselectedModelId) : null) ?? models[0];
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
       const modelConfig: any = { ctx_size: 4096, device };

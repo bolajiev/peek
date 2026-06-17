@@ -4,7 +4,7 @@ import {
   ScrollView, Animated, KeyboardAvoidingView, Platform,
   Image,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { loadModel, unloadModel, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { getTheme } from '../theme';
@@ -26,6 +26,8 @@ const SYSTEM_PROMPT = `You are Peek, a private personal AI assistant. You run en
 
 export default function ChatScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const preselectedModelId: string | undefined = route.params?.modelId;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
 
@@ -62,7 +64,7 @@ export default function ChatScreen() {
     try {
       const models = await getDownloadedModels();
       if (models.length === 0) { setNoModel(true); setModelLoading(false); return; }
-      const defaultId = await getDefaultModelId();
+      const defaultId = preselectedModelId ?? await getDefaultModelId();
       const model = (defaultId ? models.find((m) => m.id === defaultId) : null) ?? models[0];
       setModelName(model.name);
       const settings = await getSettings();

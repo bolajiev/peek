@@ -8,10 +8,10 @@ import {
   loadModel, unloadModel, transcribe, completion, textToSpeech,
   WHISPER_EN_BASE_Q8_0, TTS_EN_SUPERTONIC_Q4_0, InferenceCancelledError,
 } from '@qvac/sdk';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getDownloadedModels, getDefaultModelId } from '../utils/storage';
+import { getDownloadedModels } from '../utils/storage';
 import { ragQuery, buildRagContext } from '../utils/ragService';
 
 type Phase = 'idle' | 'recording' | 'transcribing' | 'thinking' | 'speaking' | 'done';
@@ -22,6 +22,8 @@ const SYSTEM = 'You are Peek, a private on-device AI assistant. Answer concisely
 
 export default function VoiceScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const preselectedModelId: string | undefined = route.params?.modelId;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
 
@@ -70,8 +72,7 @@ export default function VoiceScreen() {
       const models = await getDownloadedModels();
       if (models.length > 0) {
         setStatus('Loading language model...');
-        const defaultId = await getDefaultModelId();
-        const m = (defaultId ? models.find(x => x.id === defaultId) : null) ?? models[0];
+        const m = (preselectedModelId ? models.find(x => x.id === preselectedModelId) : null) ?? models[0];
         const mid = await loadModel({
           modelSrc: m.modelSrc,
           modelType: 'llm',

@@ -260,6 +260,14 @@ export async function setDefaultModelId(modelId: string): Promise<void> {
   await AsyncStorage.setItem('@peek_default_model', modelId);
 }
 
+export async function getQuickChatDefaultId(): Promise<string | null> {
+  return AsyncStorage.getItem('@peek_quickchat_default');
+}
+
+export async function setQuickChatDefaultId(modelId: string): Promise<void> {
+  await AsyncStorage.setItem('@peek_quickchat_default', modelId);
+}
+
 export async function getThemeOverride(): Promise<'dark' | 'light' | null> {
   const val = await AsyncStorage.getItem('@peek_theme_override');
   if (val === 'dark' || val === 'light') return val;

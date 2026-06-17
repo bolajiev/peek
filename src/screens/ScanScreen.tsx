@@ -6,7 +6,7 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Paths, File } from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { loadModel, unloadModel, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
@@ -25,6 +25,8 @@ function pinchDist(touches: { pageX: number; pageY: number }[]): number {
 
 export default function ScanScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const preselectedModelId: string | undefined = route.params?.modelId;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
   const [permission, requestPermission] = useCameraPermissions();
@@ -95,7 +97,7 @@ export default function ScanScreen() {
       new File(imageUri).copy(savedFile);
 
       setAnalysisText('Loading model...');
-      const modelInfo = await findModel();
+      const modelInfo = await findModel(preselectedModelId);
       if (!modelInfo) {
         setIsAnalyzing(false);
         setPreviewUri(null);
@@ -317,9 +319,10 @@ function ActivityDots({ color }: { color: string }) {
   );
 }
 
-async function findModel(): Promise<ModelInfo | null> {
+async function findModel(preselectedId?: string): Promise<ModelInfo | null> {
   const downloaded = await getDownloadedModels();
   if (downloaded.length === 0) return null;
+  if (preselectedId) return downloaded.find(m => m.id === preselectedId) ?? downloaded[0] ?? null;
   const defaultId = await getDefaultModelId();
   return (defaultId ? downloaded.find((m) => m.id === defaultId) : null) ?? downloaded[0] ?? null;
 }

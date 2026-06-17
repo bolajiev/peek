@@ -3,11 +3,11 @@ import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, KeyboardAvoidingView, Platform, Animated,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { loadModel, unloadModel, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getDownloadedModels, getDefaultModelId, getSettings } from '../utils/storage';
+import { getDownloadedModels, getSettings } from '../utils/storage';
 import { IconBack, IconSend } from '../components/Icons';
 
 interface Msg { id: string; role: 'user' | 'assistant'; text: string; streaming?: boolean; }
@@ -16,6 +16,8 @@ const SYSTEM = 'You are Peek, a fast private AI assistant. Keep answers concise.
 
 export default function QuickChatScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const preselectedModelId: string | undefined = route.params?.modelId;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
 
@@ -45,8 +47,7 @@ export default function QuickChatScreen() {
     try {
       const models = await getDownloadedModels();
       if (!models.length) { setNoModel(true); setLoading(false); return; }
-      const defaultId = await getDefaultModelId();
-      const model = (defaultId ? models.find(m => m.id === defaultId) : null) ?? models[0];
+      const model = (preselectedModelId ? models.find(m => m.id === preselectedModelId) : null) ?? models[0];
       setModelName(model.name);
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
