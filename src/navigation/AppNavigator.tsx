@@ -15,6 +15,8 @@ import OnboardingScreen from '../screens/OnboardingScreen';
 import ChatScreen from '../screens/ChatScreen';
 import ScanScreen from '../screens/ScanScreen';
 import HistoryScreen from '../screens/HistoryScreen';
+import VoiceScreen from '../screens/VoiceScreen';
+import DeepScreen from '../screens/DeepScreen';
 import ResultScreen from '../screens/ResultScreen';
 import ModelsScreen from '../screens/ModelsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
@@ -46,19 +48,37 @@ function PeekTabBar({ state, navigation }: any) {
     navigation.navigate('Scan');
   };
 
-  const isChatActive = state.index === 0;
-  const isHistoryActive = state.index === 2;
+  const activeTab = state.routes[state.index]?.name;
+
+  const Tab = ({ name, label, children }: { name: string; label: string; children: (active: boolean) => React.ReactNode }) => {
+    const active = activeTab === name;
+    return (
+      <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate(name)} activeOpacity={0.7}>
+        <View style={[styles.tabIcon, active && { backgroundColor: theme.accent + '22' }]}>
+          {children(active)}
+        </View>
+        <Text style={[styles.tabLabel, { color: active ? theme.accent : theme.textSecondary }]}>{label}</Text>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.tabBar, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
-      <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('Chat')} activeOpacity={0.7}>
-        <View style={[styles.tabIcon, isChatActive && { backgroundColor: theme.accent + '22' }]}>
-          <View style={[styles.chatIcon, { borderColor: isChatActive ? theme.accent : theme.textSecondary }]}>
-            <View style={[styles.chatDot, { backgroundColor: isChatActive ? theme.accent : theme.textSecondary }]} />
+      <Tab name="Chat" label="Chat">
+        {(active) => (
+          <View style={[styles.chatIcon, { borderColor: active ? theme.accent : theme.textSecondary }]}>
+            <View style={[styles.chatDot, { backgroundColor: active ? theme.accent : theme.textSecondary }]} />
           </View>
-        </View>
-        <Text style={[styles.tabLabel, { color: isChatActive ? theme.accent : theme.textSecondary }]}>Chat</Text>
-      </TouchableOpacity>
+        )}
+      </Tab>
+
+      <Tab name="Voice" label="Voice">
+        {(active) => (
+          <View style={[styles.micIconSmall, { borderColor: active ? theme.accent : theme.textSecondary }]}>
+            <View style={[styles.micDot, { backgroundColor: active ? theme.accent : theme.textSecondary }]} />
+          </View>
+        )}
+      </Tab>
 
       <View style={styles.fabWrap}>
         <Animated.View style={{ transform: [{ scale: scanScale }] }}>
@@ -70,16 +90,25 @@ function PeekTabBar({ state, navigation }: any) {
         </Animated.View>
       </View>
 
-      <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('History')} activeOpacity={0.7}>
-        <View style={[styles.tabIcon, isHistoryActive && { backgroundColor: theme.accent + '22' }]}>
-          <View style={styles.historyLines}>
-            {[12, 18, 10].map((w, i) => (
-              <View key={i} style={[styles.historyLine, { backgroundColor: isHistoryActive ? theme.accent : theme.textSecondary, width: w }]} />
+      <Tab name="Deep" label="Deep">
+        {(active) => (
+          <View style={styles.deepLines}>
+            {[10, 16, 10].map((w, i) => (
+              <View key={i} style={[styles.deepLine, { backgroundColor: active ? theme.accent : theme.textSecondary, width: w }]} />
             ))}
           </View>
-        </View>
-        <Text style={[styles.tabLabel, { color: isHistoryActive ? theme.accent : theme.textSecondary }]}>History</Text>
-      </TouchableOpacity>
+        )}
+      </Tab>
+
+      <Tab name="History" label="History">
+        {(active) => (
+          <View style={styles.historyLines}>
+            {[12, 18, 10].map((w, i) => (
+              <View key={i} style={[styles.historyLine, { backgroundColor: active ? theme.accent : theme.textSecondary, width: w }]} />
+            ))}
+          </View>
+        )}
+      </Tab>
     </View>
   );
 }
@@ -117,7 +146,9 @@ function MainScreen() {
       <View style={{ flex: 1, backgroundColor: theme.background }}>
         <Tab.Navigator screenOptions={{ headerShown: false }} tabBar={(props) => <PeekTabBar {...props} />}>
           <Tab.Screen name="Chat" component={ChatScreen} />
+          <Tab.Screen name="Voice" component={VoiceScreen} />
           <Tab.Screen name="Scan" component={ScanScreen} />
+          <Tab.Screen name="Deep" component={DeepScreen} />
           <Tab.Screen name="History" component={HistoryScreen} />
         </Tab.Navigator>
 
@@ -179,6 +210,10 @@ const styles = StyleSheet.create({
   chatDot: { width: 4, height: 4, borderRadius: 2 },
   historyLines: { gap: 3, alignItems: 'flex-start' },
   historyLine: { height: 2, borderRadius: 1 },
+  micIconSmall: { width: 14, height: 18, borderRadius: 7, borderWidth: 1.5, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 2 },
+  micDot: { width: 4, height: 4, borderRadius: 2 },
+  deepLines: { gap: 3, alignItems: 'center' },
+  deepLine: { height: 2, borderRadius: 1 },
   fabWrap: { flex: 1, alignItems: 'center', marginTop: -24 },
   fab: { width: 62, height: 62, borderRadius: 31, justifyContent: 'center', alignItems: 'center', shadowColor: '#FFC200', shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
   fabLensOuter: { width: 26, height: 26, borderRadius: 13, borderWidth: 2.5, borderColor: '#000', justifyContent: 'center', alignItems: 'center' },
