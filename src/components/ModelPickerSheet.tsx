@@ -101,7 +101,7 @@ export default function ModelPickerSheet({
                 style={[styles.getModelsBtn, { backgroundColor: theme.accent }]}
                 onPress={onGetModels}
               >
-                <Text style={[styles.getModelsBtnText, { color: '#000' }]}>Get Models</Text>
+                <Text style={[styles.getModelsBtnText, { color: theme.accentFg }]}>Get Models</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -127,7 +127,7 @@ export default function ModelPickerSheet({
                           <Text style={[styles.modelName, { color: theme.text }]}>{m.name}</Text>
                           {m.badge && (
                             <View style={[styles.badge, { backgroundColor: m.badgeColor || theme.accent }]}>
-                              <Text style={styles.badgeText}>{m.badge}</Text>
+                              <Text style={[styles.badgeText, { color: (m.badgeColor || theme.accent) === theme.accent ? theme.accentFg : '#fff' }]}>{m.badge}</Text>
                             </View>
                           )}
                         </View>
@@ -152,7 +152,7 @@ export default function ModelPickerSheet({
                   activeOpacity={0.7}
                 >
                   <View style={[styles.checkbox, { borderColor: setDefault ? theme.accent : theme.border, backgroundColor: setDefault ? theme.accent : 'transparent' }]}>
-                    {setDefault && <Text style={styles.checkmark}>✓</Text>}
+                    {setDefault && <Text style={[styles.checkmark, { color: theme.accentFg }]}>✓</Text>}
                   </View>
                   <Text style={[styles.defaultLabel, { color: theme.textSecondary }]}>Set as default for Quick Chat</Text>
                 </TouchableOpacity>
@@ -160,7 +160,7 @@ export default function ModelPickerSheet({
 
               <View style={[styles.footer, { borderTopColor: theme.border }]}>
                 <TouchableOpacity style={[styles.startBtn, { backgroundColor: selected ? theme.accent : theme.border }]} onPress={handleStart} disabled={!selected} activeOpacity={0.85}>
-                  <Text style={[styles.startBtnText, { color: selected ? '#000' : theme.textSecondary }]}>{startLabel}</Text>
+                  <Text style={[styles.startBtnText, { color: selected ? theme.accentFg : theme.textSecondary }]}>{startLabel}</Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
   modelNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   modelName: { fontSize: 14, fontWeight: '700' },
   badge: { borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
-  badgeText: { fontSize: 9, fontWeight: '700', color: '#fff', textTransform: 'uppercase' },
+  badgeText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' },
   modelDesc: { fontSize: 12, lineHeight: 17 },
   modelSize: { fontSize: 11, fontWeight: '500', marginTop: 1 },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 32 },
@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
   getModelsBtnText: { fontSize: 15, fontWeight: '800' },
   defaultRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 12 },
   checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
-  checkmark: { color: '#000', fontSize: 12, fontWeight: '900' },
+  checkmark: { fontSize: 12, fontWeight: '900' },
   defaultLabel: { fontSize: 13 },
   footer: { paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 1 },
   startBtn: { borderRadius: 14, paddingVertical: 15, alignItems: 'center' },

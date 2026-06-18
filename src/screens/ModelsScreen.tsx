@@ -229,7 +229,7 @@ export default function ModelsScreen() {
           <View style={styles.cardTopLeft}>
             {model.badge && (
               <View style={[styles.badge, { backgroundColor: model.badgeColor || theme.accent }]}>
-                <Text style={styles.badgeText}>{model.badge}</Text>
+                <Text style={[styles.badgeText, { color: (model.badgeColor || theme.accent) === theme.accent ? theme.accentFg : '#fff' }]}>{model.badge}</Text>
               </View>
             )}
           </View>
@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 3,
   },
   badgeText: {
-    fontSize: 10, fontWeight: '700', color: '#fff',
+    fontSize: 10, fontWeight: '700',
     textTransform: 'uppercase', letterSpacing: 0.5,
   },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },

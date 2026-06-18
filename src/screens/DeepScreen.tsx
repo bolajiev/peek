@@ -191,7 +191,7 @@ If the answer isn't in the context, say so clearly. Never fabricate information.
           </Text>
           {loadError && (
             <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme.accent, marginTop: 12 }]} onPress={() => { setNoModel(false); setLoadError(null); loadLlm(); }}>
-              <Text style={[styles.actionBtnText, { color: '#fff' }]}>Retry</Text>
+              <Text style={[styles.actionBtnText, { color: theme.accentFg }]}>Retry</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border }]} onPress={() => navigation.navigate('Models')}>
@@ -213,7 +213,7 @@ If the answer isn't in the context, say so clearly. Never fabricate information.
               onPress={handlePickFile}
               disabled={llmLoading}
             >
-              <Text style={[styles.pickBtnText, { color: '#fff' }]}>{llmLoading ? 'Loading model…' : 'Choose File'}</Text>
+              <Text style={[styles.pickBtnText, { color: llmLoading ? theme.textSecondary : theme.accentFg }]}>{llmLoading ? 'Loading model…' : 'Choose File'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -237,7 +237,7 @@ If the answer isn't in the context, say so clearly. Never fabricate information.
                   {msg.role === 'assistant' ? (
                     <MarkdownText color={theme.text} fontSize={15} lineHeight={22}>{msg.text}</MarkdownText>
                   ) : (
-                    <Text selectable style={[styles.bubbleText, { color: '#fff' }]}>{msg.text}</Text>
+                    <Text selectable style={[styles.bubbleText, { color: theme.accentFg }]}>{msg.text}</Text>
                   )}
                 </View>
               </View>
@@ -276,7 +276,7 @@ If the answer isn't in the context, say so clearly. Never fabricate information.
                 onPress={handleAsk}
                 disabled={!question.trim() || isBusy}
               >
-                <Text style={[styles.sendBtnText, { color: question.trim() ? '#fff' : theme.textSecondary }]}>›</Text>
+                <Text style={[styles.sendBtnText, { color: question.trim() ? theme.accentFg : theme.textSecondary }]}>›</Text>
               </TouchableOpacity>
             )}
           </View>
