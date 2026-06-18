@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Paths, File, Directory } from 'expo-file-system';
+import { Platform } from 'react-native';
 import { HistoryItem, InferenceLog, AppSettings, ThemeMode, Accelerator, ResponseLength, DownloadedModel, Conversation, ChatMessage, ModuleId } from '../types';
 import { AVAILABLE_MODELS } from './models';
 
@@ -25,7 +26,17 @@ const DEFAULT_SETTINGS: AppSettings = {
   huggingFaceToken: '',
 };
 
+// On Android, save to external app storage (/Android/data/com.peek.app/files/)
+// so users can see files in a file manager. On iOS, use internal documents.
 export function getModelsDir(): Directory {
+  if (Platform.OS === 'android') {
+    return new Directory('file:///storage/emulated/0/Android/data/com.peek.app/files/peek/models');
+  }
+  return new Directory(Paths.document, 'peek', 'models');
+}
+
+// Internal storage dir — needed for migration only
+function getInternalModelsDir(): Directory {
   return new Directory(Paths.document, 'peek', 'models');
 }
 
@@ -36,34 +47,53 @@ export async function initModelsDirectory(): Promise<void> {
 }
 
 // Maps old model folder names (pre-v4) to new canonical IDs.
-const FOLDER_MIGRATIONS: Record<string, string> = {
-  'medpsy-1.7b': 'text-health',      // MEDGEMMA_4B_IT_Q4_1 → text-health
-  'smolvlm2-500m-q8': 'vision',       // SMOLVLM2_500M_Q8_0 → vision
-  'smolvlm2-500m': 'vision',          // F16 variant — migrate if vision not already present
+const FOLDER_RENAMES: Record<string, string> = {
+  'medpsy-1.7b':     'text-health',
+  'smolvlm2-500m-q8': 'vision',
+  'smolvlm2-500m':    'vision',
 };
 
+function moveModelFiles(srcFolder: Directory, dstFolder: Directory): void {
+  dstFolder.create({ intermediates: true, idempotent: true });
+  const srcModel = new File(srcFolder, 'model.gguf');
+  if (srcModel.exists) srcModel.move(new File(dstFolder, 'model.gguf'));
+  const srcMmproj = new File(srcFolder, 'mmproj.gguf');
+  if (srcMmproj.exists) srcMmproj.move(new File(dstFolder, 'mmproj.gguf'));
+  try { srcFolder.delete(); } catch {}
+}
+
 async function migrateOldModelFolders(): Promise<void> {
-  const modelsDir = getModelsDir();
-  for (const [oldId, newId] of Object.entries(FOLDER_MIGRATIONS)) {
-    const oldFolder = new Directory(modelsDir, oldId);
-    const newFolder = new Directory(modelsDir, newId);
-    if (!oldFolder.exists) continue;
-    // Only migrate if new folder doesn't already have a model.gguf
-    const newModel = new File(newFolder, 'model.gguf');
-    if (newModel.exists) {
-      // New folder already populated — remove the old one
-      try { oldFolder.delete(); } catch {}
+  const externalDir = getModelsDir();
+  const internalDir = getInternalModelsDir();
+  const isAndroid = Platform.OS === 'android';
+
+  // All IDs we care about (old names + new names)
+  const allIds = [
+    ...Object.keys(FOLDER_RENAMES),
+    ...Object.values(FOLDER_RENAMES),
+    'text-fast',
+  ];
+
+  for (const id of [...new Set(allIds)]) {
+    const targetId = FOLDER_RENAMES[id] ?? id;
+    const dstFolder = new Directory(externalDir, targetId);
+    const dstReady = new File(dstFolder, 'model.gguf').exists;
+    if (dstReady) continue;
+
+    // Try: same location but old name
+    const srcSameLoc = new Directory(externalDir, id);
+    if (srcSameLoc.exists) {
+      try { moveModelFiles(srcSameLoc, dstFolder); } catch {}
       continue;
     }
-    // Rename old → new by moving the folder
-    try {
-      newFolder.create({ intermediates: true, idempotent: true });
-      const oldModel = new File(oldFolder, 'model.gguf');
-      if (oldModel.exists) oldModel.move(new File(newFolder, 'model.gguf'));
-      const oldMmproj = new File(oldFolder, 'mmproj.gguf');
-      if (oldMmproj.exists) oldMmproj.move(new File(newFolder, 'mmproj.gguf'));
-      oldFolder.delete();
-    } catch {}
+
+    // On Android: try internal storage (pre-external-storage fix) with old or new name
+    if (isAndroid) {
+      const srcInternal = new Directory(internalDir, id);
+      if (srcInternal.exists) {
+        try { moveModelFiles(srcInternal, dstFolder); } catch {}
+      }
+    }
   }
 }
 
