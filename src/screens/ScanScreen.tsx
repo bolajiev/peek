@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  TextInput, Animated, Image, PanResponder, KeyboardAvoidingView, Platform,
+  TextInput, Animated, Image, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Paths, File } from 'expo-file-system';
@@ -17,11 +17,7 @@ import { ModelInfo } from '../types';
 
 const SYSTEM_PROMPT = `You are Peek, a personal AI assistant with vision. Answer the user's question about the image accurately and concisely. Focus only on what they asked. Do not add disclaimers unless medically necessary.`;
 
-function pinchDist(touches: { pageX: number; pageY: number }[]): number {
-  const dx = touches[0].pageX - touches[1].pageX;
-  const dy = touches[0].pageY - touches[1].pageY;
-  return Math.sqrt(dx * dx + dy * dy);
-}
+
 
 export default function ScanScreen() {
   const navigation = useNavigation<any>();
@@ -38,19 +34,14 @@ export default function ScanScreen() {
   const [question, setQuestion] = useState('');
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [zoom, setZoom] = useState(0);
-  const [showZoom, setShowZoom] = useState(false);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const captureScale = useRef(new Animated.Value(1)).current;
   const analyzeAnim = useRef(new Animated.Value(0)).current;
   const runRef = useRef<any>(null);
-  const zoomRef = useRef(0);
-  const lastPinchDist = useRef<number | null>(null);
-  const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const didAutoLaunch = useRef(false);
   useFocusEffect(React.useCallback(() => {
-    // Gallery picker doesn't need camera permission — skip the gate
     if (launchMode === 'gallery') {
       if (!didAutoLaunch.current) {
         didAutoLaunch.current = true;
@@ -70,29 +61,13 @@ export default function ScanScreen() {
     return () => pulse.stop();
   }, []);
 
-  const pinchResponder = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: (e) => e.nativeEvent.touches.length === 2,
-    onMoveShouldSetPanResponder: (e) => e.nativeEvent.touches.length === 2,
-    onPanResponderGrant: (e) => {
-      if (e.nativeEvent.touches.length === 2) lastPinchDist.current = pinchDist(e.nativeEvent.touches as any);
-    },
-    onPanResponderMove: (e) => {
-      if (e.nativeEvent.touches.length === 2) {
-        const dist = pinchDist(e.nativeEvent.touches as any);
-        if (lastPinchDist.current !== null) {
-          const next = Math.min(1, Math.max(0, zoomRef.current + (dist - lastPinchDist.current) / 350));
-          zoomRef.current = next;
-          setZoom(next);
-          setShowZoom(true);
-          if (zoomTimer.current) clearTimeout(zoomTimer.current);
-          zoomTimer.current = setTimeout(() => setShowZoom(false), 1400);
-        }
-        lastPinchDist.current = dist;
-      }
-    },
-    onPanResponderRelease: () => { lastPinchDist.current = null; },
-    onPanResponderTerminate: () => { lastPinchDist.current = null; },
-  })).current;
+  const ZOOM_STEP = 0.1;
+  const adjustZoom = (delta: number) => {
+    setZoom(prev => Math.min(1, Math.max(0, parseFloat((prev + delta).toFixed(2)))));
+  };
+
+  // Computed display level: 1× – 10×
+  const zoomLabel = `${(1 + zoom * 9).toFixed(zoom === 0 ? 0 : 1)}×`;
 
   const runInference = async (imageUri: string) => {
     setIsAnalyzing(true);
@@ -251,22 +226,37 @@ export default function ScanScreen() {
           <View style={[styles.accentPill, { backgroundColor: theme.accent }]}>
             <Text style={styles.accentPillText}>Scan</Text>
           </View>
-          {showZoom && (
-            <View style={styles.zoomBadge}>
-              <Text style={styles.zoomText}>{(1 + zoom * 9).toFixed(1)}×</Text>
-            </View>
-          )}
+          {/* Zoom indicator in top bar */}
+          <View style={styles.zoomBadge}>
+            <Text style={styles.zoomText}>{zoomLabel}</Text>
+          </View>
         </View>
 
-        {/* Scan frame */}
+        {/* Scan frame + side zoom buttons */}
         {!isAnalyzing && (
-          <View style={styles.frameContainer} {...pinchResponder.panHandlers}>
+          <View style={styles.frameContainer}>
             <Animated.View style={[styles.frame, { transform: [{ scale: pulseAnim }] }]}>
               {(['TL', 'TR', 'BL', 'BR'] as const).map((pos) => (
                 <View key={pos} style={[styles.corner, styles[`corner${pos}`], { borderColor: theme.accent }]} />
               ))}
             </Animated.View>
-            <Text style={styles.frameHint}>Pinch to zoom</Text>
+            {/* Zoom buttons on the right */}
+            <View style={styles.zoomBtns}>
+              <TouchableOpacity
+                style={styles.zoomBtn}
+                onPress={() => adjustZoom(ZOOM_STEP)}
+                disabled={zoom >= 1}
+              >
+                <Text style={styles.zoomBtnText}>+</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.zoomBtn}
+                onPress={() => adjustZoom(-ZOOM_STEP)}
+                disabled={zoom <= 0}
+              >
+                <Text style={styles.zoomBtnText}>−</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -361,16 +351,27 @@ const styles = StyleSheet.create({
   backText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   accentPill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
   accentPillText: { fontSize: 13, fontWeight: '800', color: '#000' },
-  zoomBadge: { marginLeft: 'auto', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 16 },
-  zoomText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  frameContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 20 },
+  zoomBadge: { marginLeft: 'auto', backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  zoomText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  frameContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  zoomBtns: {
+    position: 'absolute', right: 20, top: '50%',
+    gap: 10, alignItems: 'center',
+    transform: [{ translateY: -40 }],
+  },
+  zoomBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)',
+  },
+  zoomBtnText: { color: '#fff', fontSize: 22, fontWeight: '300', lineHeight: 26 },
   frame: { width: 260, height: 260, position: 'relative' },
   corner: { position: 'absolute', width: 32, height: 32 },
   cornerTL: { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3 },
   cornerTR: { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3 },
   cornerBL: { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3 },
   cornerBR: { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3 },
-  frameHint: { color: 'rgba(255,255,255,0.55)', fontSize: 13 },
   analyzeOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16, backgroundColor: 'rgba(0,0,0,0.6)' },
   previewThumb: { width: 120, height: 120, borderRadius: 14 },
   analyzeCard: { alignItems: 'center', padding: 20, borderRadius: 16, gap: 4 },

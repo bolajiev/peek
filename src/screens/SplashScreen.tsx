@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Image } from 'react-native';
+import { View, StyleSheet, Animated, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
@@ -35,26 +35,11 @@ export default function SplashScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <Animated.View
-        style={[
-          styles.inner,
-          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
-        ]}
-      >
-        <Image
-          source={require('../../peeklogo.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-        <Text style={[styles.title, { color: theme.accent }]}>Peek</Text>
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-          Personal AI Assistant
-        </Text>
-      </Animated.View>
-
-      <Animated.Text style={[styles.footer, { color: theme.textSecondary, opacity: fadeAnim }]}>
-        Powered by qvac · On-Device AI
-      </Animated.Text>
+      <Animated.Image
+        source={require('../../peeklogo.png')}
+        style={[styles.logo, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
+        resizeMode="contain"
+      />
     </View>
   );
 }
@@ -65,30 +50,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  inner: {
-    alignItems: 'center',
-  },
   logo: {
-    width: 110,
-    height: 110,
-    borderRadius: 28,
-  },
-  title: {
-    fontSize: 52,
-    fontWeight: '900',
-    letterSpacing: 3,
-    marginTop: 20,
-  },
-  subtitle: {
-    fontSize: 15,
-    marginTop: 8,
-    fontWeight: '500',
-    letterSpacing: 1,
-  },
-  footer: {
-    position: 'absolute',
-    bottom: 48,
-    fontSize: 12,
-    letterSpacing: 0.5,
+    width: 120,
+    height: 120,
+    borderRadius: 30,
   },
 });
