@@ -24,6 +24,7 @@ import QuickChatScreen from '../screens/QuickChatScreen';
 import ResultScreen from '../screens/ResultScreen';
 import ModelsScreen from '../screens/ModelsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import DownloadScreen from '../screens/DownloadScreen';
 import Sidebar from '../components/Sidebar';
 
 const Stack = createNativeStackNavigator();
@@ -139,6 +140,7 @@ export default function AppNavigator() {
             }}
           />
           <Stack.Screen name="Settings" component={SettingsScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="Download" component={DownloadScreen} options={{ animation: 'slide_from_bottom' }} />
         </Stack.Navigator>
       </NavigationContainer>
     </ThemeContext.Provider>

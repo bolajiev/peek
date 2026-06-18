@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, Animated, KeyboardAvoidingView, Platform,
-  Image,
+  Image, Keyboard,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
@@ -12,11 +12,11 @@ import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import {
-  getDownloadedModels, getSettings,
+  syncModelsFromDisk, getSettings, getDefaultModelId,
   getConversations, saveConversation, getMessages,
   appendMessage, updateLastMessage, createConversationId,
 } from '../utils/storage';
-import { isTextModel, SYSTEM_PROMPTS } from '../utils/models';
+import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
 import { DownloadedModel, Conversation, ChatMessage } from '../types';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
@@ -73,7 +73,11 @@ export default function ChatScreen() {
       if (seedAnswer) seeded.push({ id: 'seed-a', role: 'assistant', text: seedAnswer });
       setMessages(seeded);
     }
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+    });
     return () => {
+      sub.remove();
       if (currentRunRef.current) {
         void cancel({ requestId: currentRunRef.current.requestId }).catch(() => {});
       }
@@ -91,11 +95,14 @@ export default function ChatScreen() {
     setModelLoading(true);
     setLoadProgress(0);
     try {
-      const all = await getDownloadedModels();
-      const textModels = all.filter(isTextModel);
-      const models = textModels.length > 0 ? textModels : all;
-      if (models.length === 0) { setNoModel(true); setModelLoading(false); return; }
-      const model = (preselectedModelId ? models.find(m => m.id === preselectedModelId) : null) ?? models[0];
+      const synced = await syncModelsFromDisk();
+      const defaultId = await getDefaultModelId();
+      const preferredId = preselectedModelId ?? defaultId ?? MODEL_KEYS.TEXT_FAST;
+      const model = synced.find(m => m.id === preferredId)
+        ?? synced.find(m => m.id === MODEL_KEYS.TEXT_FAST)
+        ?? synced.find(m => m.modelType === 'text')
+        ?? synced[0];
+      if (!model) { setNoModel(true); setModelLoading(false); return; }
       setModelName(model.name);
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
@@ -265,64 +272,70 @@ export default function ChatScreen() {
         </View>
       )}
 
-      {noModel ? (
-        <NoModelState theme={theme} error={loadError}
-          onGoModels={() => navigation.navigate('Models', { autoLaunch: { screen: 'Scribe', label: 'Peek Scribe' } })}
-          onRetry={() => { setNoModel(false); setLoadError(null); loadOnMount(); }} />
-      ) : messages.length === 0 ? (
-        <EmptyState theme={theme} mode={mode} />
-      ) : (
-        <ScrollView ref={scrollRef} style={styles.msgList} contentContainerStyle={styles.msgListContent}
-          keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-          {messages.map(msg => <MessageBubble key={msg.id} msg={msg} theme={theme} />)}
-          {isTyping && messages[messages.length - 1]?.role !== 'assistant' && <TypingIndicator theme={theme} />}
-          <View style={{ height: 8 }} />
-        </ScrollView>
-      )}
+      <KeyboardAvoidingView
+        style={styles.keyboardFlex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
+      >
+        {noModel ? (
+          <NoModelState theme={theme} error={loadError}
+            onGoModels={() => navigation.navigate('Download', { modelId: 'text-fast', returnTo: 'Scribe', returnParams: {} })}
+            onRetry={() => { setNoModel(false); setLoadError(null); loadOnMount(); }} />
+        ) : messages.length === 0 ? (
+          <EmptyState theme={theme} mode={mode} />
+        ) : (
+          <ScrollView ref={scrollRef} style={styles.msgList} contentContainerStyle={styles.msgListContent}
+            keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} theme={theme} />)}
+            {isTyping && messages[messages.length - 1]?.role !== 'assistant' && <TypingIndicator theme={theme} />}
+            <View style={{ height: 8 }} />
+          </ScrollView>
+        )}
 
-      {!noModel && (
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          {attachedImage && (
-            <View style={[styles.attachPreviewBar, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
-              <Image source={{ uri: attachedImage }} style={styles.attachThumb} />
-              <Text style={[styles.attachLabel, { color: theme.textSecondary }]}>Image attached</Text>
-              <TouchableOpacity onPress={() => setAttachedImage(null)}>
-                <Text style={[styles.attachRemove, { color: theme.textSecondary }]}>✕</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          <View style={[styles.inputBar, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
-            <TouchableOpacity style={styles.attachBtn} onPress={handleAttach} activeOpacity={0.7}>
-              <Text style={[styles.attachIcon, { color: theme.textSecondary }]}>{mode === 'document' ? '📄' : '+'}</Text>
-            </TouchableOpacity>
-            <TextInput
-              style={[styles.textInput, { color: theme.text }]}
-              placeholder={modelLoading ? 'Loading model...' : 'Ask anything...'}
-              placeholderTextColor={theme.textSecondary}
-              value={input}
-              onChangeText={setInput}
-              multiline
-              maxLength={2000}
-              returnKeyType="default"
-              editable={!modelLoading && !isTyping}
-            />
-            {isTyping ? (
-              <TouchableOpacity style={[styles.sendBtn, { backgroundColor: theme.error }]} onPress={handleStop}>
-                <View style={[styles.stopSquare, { backgroundColor: '#fff' }]} />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[styles.sendBtn, { backgroundColor: (input.trim() || attachedImage) && !modelLoading ? theme.accent : theme.border }]}
-                onPress={handleSend}
-                disabled={(!input.trim() && !attachedImage) || modelLoading}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.sendIcon, { color: (input.trim() || attachedImage) ? theme.accentFg : theme.textSecondary }]}>↑</Text>
-              </TouchableOpacity>
+        {!noModel && (
+          <>
+            {attachedImage && (
+              <View style={[styles.attachPreviewBar, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
+                <Image source={{ uri: attachedImage }} style={styles.attachThumb} />
+                <Text style={[styles.attachLabel, { color: theme.textSecondary }]}>Image attached</Text>
+                <TouchableOpacity onPress={() => setAttachedImage(null)}>
+                  <Text style={[styles.attachRemove, { color: theme.textSecondary }]}>✕</Text>
+                </TouchableOpacity>
+              </View>
             )}
-          </View>
-        </KeyboardAvoidingView>
-      )}
+            <View style={[styles.inputBar, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
+              <TouchableOpacity style={styles.attachBtn} onPress={handleAttach} activeOpacity={0.7}>
+                <Text style={[styles.attachIcon, { color: theme.textSecondary }]}>{mode === 'document' ? '📄' : '+'}</Text>
+              </TouchableOpacity>
+              <TextInput
+                style={[styles.textInput, { color: theme.text }]}
+                placeholder={modelLoading ? 'Loading model...' : 'Ask anything...'}
+                placeholderTextColor={theme.textSecondary}
+                value={input}
+                onChangeText={setInput}
+                multiline
+                maxLength={2000}
+                returnKeyType="default"
+                editable={!modelLoading && !isTyping}
+              />
+              {isTyping ? (
+                <TouchableOpacity style={[styles.sendBtn, { backgroundColor: theme.error }]} onPress={handleStop}>
+                  <View style={[styles.stopSquare, { backgroundColor: '#fff' }]} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.sendBtn, { backgroundColor: (input.trim() || attachedImage) && !modelLoading ? theme.accent : theme.border }]}
+                  onPress={handleSend}
+                  disabled={(!input.trim() && !attachedImage) || modelLoading}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.sendIcon, { color: (input.trim() || attachedImage) ? theme.accentFg : theme.textSecondary }]}>↑</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </>
+        )}
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -422,6 +435,7 @@ function NoModelState({ theme, error, onGoModels, onRetry }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  keyboardFlex: { flex: 1 },
   progressTrack: { height: 3 },
   progressFill: { height: 3 },
   header: { flexDirection: 'row', alignItems: 'center', paddingTop: 58, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },

@@ -15,7 +15,7 @@ import { isVisionModel } from '../utils/models';
 import { logInference } from '../utils/auditLogger';
 import { ModelInfo } from '../types';
 
-const SYSTEM_PROMPT = `You are Peek Health, a private health and nutrition AI with vision. Answer the user's question about the image accurately and concisely — focus on nutritional value, ingredients, health implications, or medical information where relevant. For health decisions, remind the user to consult a professional.`;
+const SYSTEM_PROMPT = `You are Peek, a private on-device AI assistant with vision. Answer the user's question about the image accurately and concisely.`;
 
 
 
@@ -86,7 +86,7 @@ export default function ScanScreen() {
       if (!modelInfo) {
         setIsAnalyzing(false);
         setPreviewUri(null);
-        navigation.navigate('Models', { autoLaunch: { screen: 'Lens', label: 'Peek Lens' } });
+        navigation.navigate('Download', { modelId: 'vision', returnTo: 'LensScan', returnParams: { mode: launchMode } });
         return;
       }
 

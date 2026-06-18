@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
-  Animated, ActivityIndicator, Alert,
+  Animated, ActivityIndicator, Alert, Keyboard, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
@@ -9,10 +9,10 @@ import { Paths, File, Directory } from 'expo-file-system';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext } from '../utils/ragService';
-import { getDownloadedModels, getSettings } from '../utils/storage';
+import { syncModelsFromDisk, getSettings, getDefaultModelId } from '../utils/storage';
 import { completion, cancel, loadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
-import { isTextModel, SYSTEM_PROMPTS } from '../utils/models';
+import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
 
@@ -44,17 +44,24 @@ export default function DeepScreen() {
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     loadLlm();
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+    });
+    return () => sub.remove();
   }, []);
 
   const loadLlm = async () => {
     setLlmLoading(true);
     setLlmProgress(0);
     try {
-      const all = await getDownloadedModels();
-      const textModels = all.filter(isTextModel);
-      const models = textModels.length > 0 ? textModels : all;
-      if (!models.length) { setNoModel(true); setLlmLoading(false); return; }
-      const model = (preselectedModelId ? models.find(m => m.id === preselectedModelId) : null) ?? models[0];
+      const synced = await syncModelsFromDisk();
+      const defaultId = await getDefaultModelId();
+      const preferredId = preselectedModelId ?? defaultId ?? MODEL_KEYS.TEXT_FAST;
+      const model = synced.find(m => m.id === preferredId)
+        ?? synced.find(m => m.id === MODEL_KEYS.TEXT_FAST)
+        ?? synced.find(m => m.modelType === 'text')
+        ?? synced[0];
+      if (!model) { setNoModel(true); setLlmLoading(false); return; }
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
       const modelConfig: any = { ctx_size: 4096, device };
@@ -223,8 +230,12 @@ export default function DeepScreen() {
           <Text style={[styles.loadingSub, { color: theme.textSecondary }]}>Building your private knowledge base</Text>
         </View>
       ) : (
-        <>
-          <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <KeyboardAvoidingView
+          style={styles.keyboardFlex}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={0}
+        >
+          <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {messages.map((msg, i) => (
               <View key={i} style={[styles.turn, msg.role === 'user' ? styles.turnRight : styles.turnLeft]}>
                 <View style={[
@@ -284,7 +295,7 @@ export default function DeepScreen() {
               </TouchableOpacity>
             )}
           </View>
-        </>
+        </KeyboardAvoidingView>
       )}
     </Animated.View>
   );
@@ -338,6 +349,7 @@ const styles = StyleSheet.create({
   supportedLabel: { fontSize: 12, lineHeight: 18 },
   pickBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   pickBtnText: { fontSize: 15, fontWeight: '700' },
+  keyboardFlex: { flex: 1 },
   scroll: { flex: 1 },
   scrollContent: { padding: 20, gap: 10, flexGrow: 1 },
   turn: { maxWidth: '85%', gap: 4 },

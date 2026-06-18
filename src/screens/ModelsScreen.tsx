@@ -9,10 +9,10 @@ import {
 } from 'react-native';
 import { File, Directory } from 'expo-file-system';
 import { createDownloadResumable } from 'expo-file-system/legacy';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { AVAILABLE_MODELS, getHfDownloadUrl } from '../utils/models';
+import { AVAILABLE_MODELS, getHfDownloadUrl, MODEL_KEYS } from '../utils/models';
 import {
   getDownloadedModels,
   saveDownloadedModel,
@@ -21,6 +21,8 @@ import {
   getModelsDir,
   initModelsDirectory,
   syncModelsFromDisk,
+  getDefaultModelId,
+  setDefaultModelId,
 } from '../utils/storage';
 import { ModelInfo, DownloadedModel } from '../types';
 
@@ -40,11 +42,10 @@ function formatBytes(bytes: number): string {
 
 export default function ModelsScreen() {
   const navigation = useNavigation<any>();
-  const route = useRoute<any>();
-  const autoLaunch = route.params?.autoLaunch as { screen: string; label: string } | undefined;
   const theme = getTheme(useTheme());
   const [downloadedModels, setDownloadedModels] = useState<DownloadedModel[]>([]);
   const [downloading, setDownloading] = useState<Record<string, DownloadPhase>>({});
+  const [defaultTextModelId, setDefaultTextModelIdState] = useState<string>(MODEL_KEYS.TEXT_FAST);
 
   useEffect(() => {
     init();
@@ -54,6 +55,13 @@ export default function ModelsScreen() {
     await initModelsDirectory();
     const synced = await syncModelsFromDisk();
     setDownloadedModels(synced);
+    const def = await getDefaultModelId();
+    if (def) setDefaultTextModelIdState(def);
+  };
+
+  const handleSetDefault = async (modelId: string) => {
+    await setDefaultModelId(modelId);
+    setDefaultTextModelIdState(modelId);
   };
 
   const loadDownloaded = async () => {
@@ -137,10 +145,6 @@ export default function ModelsScreen() {
       await saveDownloadedModel(newModel);
       setDownloading((prev) => { const n = { ...prev }; delete n[model.id]; return n; });
       await loadDownloaded();
-      // If opened from HomeScreen with no model, auto-navigate into the module
-      if (autoLaunch) {
-        setTimeout(() => navigation.navigate(autoLaunch.screen, { modelId: newModel.id }), 400);
-      }
     } catch {
       setDownloading((prev) => { const n = { ...prev }; delete n[model.id]; return n; });
       Alert.alert('Download Failed', 'Could not download the model. Check your internet connection and try again.');
@@ -293,16 +297,38 @@ export default function ModelsScreen() {
     );
   };
 
+  const downloadedTextModels = downloadedModels.filter(m => m.modelType === 'text');
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
-        {/* Auto-launch banner: shown when arriving from a module with no model */}
-        {autoLaunch && (
-          <View style={[styles.autoLaunchBanner, { backgroundColor: theme.accent + '18', borderColor: theme.accent + '44' }]}>
-            <Text style={[styles.autoLaunchText, { color: theme.accent }]}>
-              Download a model to use {autoLaunch.label}. It will open automatically when ready.
-            </Text>
+        {/* Default text model selector — shown when 2+ text models are downloaded */}
+        {downloadedTextModels.length >= 2 && (
+          <View style={[styles.defaultSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.defaultTitle, { color: theme.text }]}>Default Text Model</Text>
+            <Text style={[styles.defaultSub, { color: theme.textSecondary }]}>Used for Quick Chat, Scribe, Deep, and Voice</Text>
+            <View style={styles.defaultRow}>
+              {downloadedTextModels.map(m => (
+                <TouchableOpacity
+                  key={m.id}
+                  style={[
+                    styles.defaultOption,
+                    { borderColor: defaultTextModelId === m.id ? theme.accent : theme.border },
+                    defaultTextModelId === m.id && { backgroundColor: theme.accent + '18' },
+                  ]}
+                  onPress={() => handleSetDefault(m.id)}
+                  activeOpacity={0.7}
+                >
+                  {defaultTextModelId === m.id && (
+                    <View style={[styles.defaultCheck, { backgroundColor: theme.accent }]} />
+                  )}
+                  <Text style={[styles.defaultOptionText, { color: defaultTextModelId === m.id ? theme.accent : theme.textSecondary }]} numberOfLines={2}>
+                    {m.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         )}
 
@@ -319,7 +345,7 @@ export default function ModelsScreen() {
         )}
 
         <View style={[styles.sectionHeader, downloadedModels.length > 0 && { marginTop: 28 }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Available</Text>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Available Models</Text>
         </View>
 
         <Text style={[styles.sectionHint, { color: theme.textSecondary }]}>
@@ -391,8 +417,16 @@ const styles = StyleSheet.create({
   progressDetail: { fontSize: 12 },
   progressTrack: { height: 6, borderRadius: 3, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 3 },
-  autoLaunchBanner: {
-    borderWidth: 1, borderRadius: 12, padding: 14, marginBottom: 16,
+  defaultSection: {
+    borderWidth: 1, borderRadius: 16, padding: 16, marginBottom: 20,
   },
-  autoLaunchText: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
+  defaultTitle: { fontSize: 14, fontWeight: '700', marginBottom: 3 },
+  defaultSub: { fontSize: 12, marginBottom: 12 },
+  defaultRow: { flexDirection: 'row', gap: 8 },
+  defaultOption: {
+    flex: 1, borderWidth: 1.5, borderRadius: 12,
+    padding: 12, alignItems: 'center', gap: 6,
+  },
+  defaultCheck: { width: 8, height: 8, borderRadius: 4 },
+  defaultOptionText: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
 });

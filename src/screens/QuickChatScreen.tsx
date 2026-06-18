@@ -1,15 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform, Animated,
+  ScrollView, KeyboardAvoidingView, Platform, Animated, Keyboard,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getDownloadedModels, getSettings } from '../utils/storage';
-import { isTextModel, SYSTEM_PROMPTS } from '../utils/models';
+import { syncModelsFromDisk, getSettings, getDefaultModelId } from '../utils/storage';
+import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
 import { IconBack, IconSend } from '../components/Icons';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
@@ -38,20 +38,27 @@ export default function QuickChatScreen() {
 
   useEffect(() => {
     loadOnMount();
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+    });
     return () => {
+      sub.remove();
       if (runRef.current) cancel({ requestId: runRef.current.requestId }).catch(() => {});
-      // Don't unload — llmManager keeps model hot
     };
   }, []);
 
   const loadOnMount = async () => {
     setLoading(true);
     try {
-      const all = await getDownloadedModels();
-      const textModels = all.filter(isTextModel);
-      const models = textModels.length > 0 ? textModels : all;
-      if (!models.length) { setNoModel(true); setLoading(false); return; }
-      const model = (preselectedModelId ? models.find(m => m.id === preselectedModelId) : null) ?? models[0];
+      const synced = await syncModelsFromDisk();
+      // Prefer preselected → user's default → text-fast → text-health → any
+      const defaultId = await getDefaultModelId();
+      const preferredId = preselectedModelId ?? defaultId ?? MODEL_KEYS.TEXT_FAST;
+      const model = synced.find(m => m.id === preferredId)
+        ?? synced.find(m => m.id === MODEL_KEYS.TEXT_FAST)
+        ?? synced.find(m => m.modelType === 'text')
+        ?? synced[0];
+      if (!model) { setNoModel(true); setLoading(false); return; }
       setModelName(model.name);
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
@@ -163,92 +170,97 @@ export default function QuickChatScreen() {
         </View>
       )}
 
-      {/* Messages */}
-      {!noModel && (
-      <ScrollView
-        ref={scrollRef}
-        style={styles.messages}
-        contentContainerStyle={styles.messagesContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={styles.keyboardFlex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
       >
-        {messages.length === 0 && !loading && (
-          <View style={styles.empty}>
-            <Text style={[styles.emptyTitle, { color: theme.text }]}>Quick Chat</Text>
-            <Text style={[styles.emptySub, { color: theme.textSecondary }]}>Ask anything — fully on-device, no cloud.</Text>
+        {/* Messages */}
+        {!noModel && (
+          <ScrollView
+            ref={scrollRef}
+            style={styles.messages}
+            contentContainerStyle={styles.messagesContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {messages.length === 0 && !loading && (
+              <View style={styles.empty}>
+                <Text style={[styles.emptyTitle, { color: theme.text }]}>Quick Chat</Text>
+                <Text style={[styles.emptySub, { color: theme.textSecondary }]}>Ask anything — fully on-device, no cloud.</Text>
+              </View>
+            )}
+            {messages.map(msg => (
+              <View key={msg.id} style={[styles.msgRow, msg.role === 'user' && styles.msgRowUser]}>
+                <View style={[
+                  styles.bubble,
+                  msg.role === 'user'
+                    ? { backgroundColor: theme.accent, borderBottomRightRadius: 4 }
+                    : { backgroundColor: theme.cardAlt, borderBottomLeftRadius: 4 },
+                ]}>
+                  {msg.role === 'assistant' && !msg.streaming ? (
+                    <MarkdownText color={theme.text} fontSize={14} lineHeight={21}>{msg.text}</MarkdownText>
+                  ) : (
+                    <Text style={[styles.bubbleText, { color: msg.role === 'user' ? theme.accentFg : theme.text }]}>
+                      {msg.text}{msg.streaming ? '▍' : ''}
+                    </Text>
+                  )}
+                </View>
+                {msg.role === 'assistant' && !msg.streaming && msg.text ? (
+                  <View style={styles.msgActions}>
+                    <CopyButton text={msg.text} color={theme.textSecondary} size={11} />
+                  </View>
+                ) : null}
+              </View>
+            ))}
+            <View style={{ height: 12 }} />
+          </ScrollView>
+        )}
+
+        {/* Input */}
+        {!noModel && (
+          <View style={[styles.inputWrap, { borderTopColor: theme.border }]}>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.cardAlt, borderColor: theme.border, color: theme.text }]}
+              placeholder={loading ? 'Loading model...' : 'Message Peek...'}
+              placeholderTextColor={theme.textSecondary}
+              value={input}
+              onChangeText={setInput}
+              multiline
+              maxLength={2000}
+              editable={!loading}
+              onSubmitEditing={send}
+              returnKeyType="send"
+              blurOnSubmit={false}
+            />
+            {isTyping ? (
+              <TouchableOpacity
+                style={[styles.sendBtn, { backgroundColor: theme.error }]}
+                onPress={() => { if (runRef.current) void cancel({ requestId: runRef.current.requestId }).catch(() => {}); }}
+                activeOpacity={0.8}
+              >
+                <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: '#fff' }} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.sendBtn, { backgroundColor: canSend ? theme.accent : theme.cardAlt }]}
+                onPress={send}
+                disabled={!canSend}
+                activeOpacity={0.8}
+              >
+                <IconSend size={16} color={canSend ? theme.accentFg : theme.textSecondary} />
+              </TouchableOpacity>
+            )}
           </View>
         )}
-        {messages.map(msg => (
-          <View key={msg.id} style={[styles.msgRow, msg.role === 'user' && styles.msgRowUser]}>
-            <View style={[
-              styles.bubble,
-              msg.role === 'user'
-                ? { backgroundColor: theme.accent, borderBottomRightRadius: 4 }
-                : { backgroundColor: theme.cardAlt, borderBottomLeftRadius: 4 },
-            ]}>
-              {msg.role === 'assistant' && !msg.streaming ? (
-                <MarkdownText color={theme.text} fontSize={14} lineHeight={21}>{msg.text}</MarkdownText>
-              ) : (
-                <Text style={[styles.bubbleText, { color: msg.role === 'user' ? theme.accentFg : theme.text }]}>
-                  {msg.text}{msg.streaming ? '▍' : ''}
-                </Text>
-              )}
-            </View>
-            {msg.role === 'assistant' && !msg.streaming && msg.text ? (
-              <View style={styles.msgActions}>
-                <CopyButton text={msg.text} color={theme.textSecondary} size={11} />
-              </View>
-            ) : null}
-          </View>
-        ))}
-        <View style={{ height: 12 }} />
-      </ScrollView>
-      )}
-
-      {/* Input */}
-      {!noModel && (
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[styles.inputWrap, { borderTopColor: theme.border }]}>
-          <TextInput
-            style={[styles.input, { backgroundColor: theme.cardAlt, borderColor: theme.border, color: theme.text }]}
-            placeholder={loading ? 'Loading model...' : 'Message Peek...'}
-            placeholderTextColor={theme.textSecondary}
-            value={input}
-            onChangeText={setInput}
-            multiline
-            maxLength={2000}
-            editable={!loading}
-            onSubmitEditing={send}
-            returnKeyType="send"
-            blurOnSubmit={false}
-          />
-          {isTyping ? (
-            <TouchableOpacity
-              style={[styles.sendBtn, { backgroundColor: theme.error }]}
-              onPress={() => { if (runRef.current) void cancel({ requestId: runRef.current.requestId }).catch(() => {}); }}
-              activeOpacity={0.8}
-            >
-              <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: '#fff' }} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.sendBtn, { backgroundColor: canSend ? theme.accent : theme.cardAlt }]}
-              onPress={send}
-              disabled={!canSend}
-              activeOpacity={0.8}
-            >
-              <IconSend size={16} color={canSend ? theme.accentFg : theme.textSecondary} />
-            </TouchableOpacity>
-          )}
-        </View>
       </KeyboardAvoidingView>
-      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  keyboardFlex: { flex: 1 },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingTop: 56, paddingHorizontal: 20, paddingBottom: 13, borderBottomWidth: 1,

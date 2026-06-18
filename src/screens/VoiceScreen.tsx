@@ -6,11 +6,11 @@ import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import { transcribe, completion, InferenceCancelledError } from '@qvac/sdk';
 import { whisperManager, llmManager } from '../utils/modelManager';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getDownloadedModels, getSettings, toPath } from '../utils/storage';
-import { isTextModel, SYSTEM_PROMPTS } from '../utils/models';
+import { getDownloadedModels, getSettings, toPath, syncModelsFromDisk } from '../utils/storage';
+import { isTextModel, SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS } from '../utils/models';
 import { Paths, File, Directory } from 'expo-file-system';
 import { IconVoice, IconUpload, IconMic, IconBack } from '../components/Icons';
 import MarkdownText from '../components/MarkdownText';
@@ -20,8 +20,6 @@ type Phase = 'idle' | 'recording' | 'transcribing' | 'transcript' | 'summarizing
 
 export default function VoiceScreen() {
   const navigation = useNavigation<any>();
-  const route = useRoute<any>();
-  const preselectedModelId: string | undefined = route.params?.modelId;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
 
@@ -63,27 +61,6 @@ export default function VoiceScreen() {
     pulseAnim.setValue(1);
   };
 
-  const handleUpload = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: 'audio/*',
-      copyToCacheDirectory: true,
-    });
-    if (result.canceled || !result.assets?.[0]) return;
-    const picked = result.assets[0];
-    // Copy to stable documents dir (content:// URIs not accepted by QVAC native layer)
-    try {
-      const recsDir = new Directory(Paths.document, 'peek', 'recordings');
-      recsDir.create({ intermediates: true, idempotent: true });
-      const ext = picked.name?.split('.').pop() ?? 'm4a';
-      const destFile = new File(recsDir, `upload_${Date.now()}.${ext}`);
-      new File(picked.uri).copy(destFile);
-      if (!destFile.exists) throw new Error('Could not copy audio file');
-      await doTranscribe(destFile.uri);
-    } catch {
-      await doTranscribe(picked.uri);
-    }
-  };
-
   const handleRecord = async () => {
     if (phase === 'recording') { await stopRecording(); return; }
     const { granted } = await Audio.requestPermissionsAsync();
@@ -105,13 +82,10 @@ export default function VoiceScreen() {
     const rec = recordingRef.current;
     if (!rec) return;
     recordingRef.current = null;
-    // Fully finalize before reading URI — prevents the race where transcribe
-    // is called on a file the encoder hasn't closed yet
     await rec.stopAndUnloadAsync().catch(() => {});
     const cacheUri = rec.getURI();
-    if (!cacheUri) { setInitError('Recording produced no file.'); return; }
+    if (!cacheUri) { setInitError('Recording not found. Record again.'); return; }
 
-    // Copy from evictable cache → stable documents dir
     try {
       const recsDir = new Directory(Paths.document, 'peek', 'recordings');
       recsDir.create({ intermediates: true, idempotent: true });
@@ -124,13 +98,32 @@ export default function VoiceScreen() {
     }
   };
 
+  const handleUpload = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'audio/*',
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const picked = result.assets[0];
+    try {
+      const recsDir = new Directory(Paths.document, 'peek', 'recordings');
+      recsDir.create({ intermediates: true, idempotent: true });
+      const ext = picked.name?.split('.').pop() ?? 'm4a';
+      const destFile = new File(recsDir, `upload_${Date.now()}.${ext}`);
+      new File(picked.uri).copy(destFile);
+      if (!destFile.exists) throw new Error('Could not copy audio file');
+      await doTranscribe(destFile.uri);
+    } catch {
+      await doTranscribe(picked.uri);
+    }
+  };
+
   const doTranscribe = async (uri: string) => {
     setPhase('transcribing');
     setTranscript('');
     setSummary('');
     try {
       const wId = await whisperManager.ensure();
-      // audioChunk accepts a bare filesystem path string (strip file:// prefix)
       const text: string = await transcribe({
         modelId: wId,
         audioChunk: toPath(uri),
@@ -147,19 +140,24 @@ export default function VoiceScreen() {
     if (!transcript) return;
     setPhase('summarizing');
     try {
-      const all = await getDownloadedModels();
-      const textModels = all.filter(isTextModel);
-      const models = textModels.length > 0 ? textModels : all;
-      if (!models.length) {
-        Alert.alert('No model', 'Download a text model from the Models screen to use summarization.');
+      // Always use text-fast; download if missing
+      const synced = await syncModelsFromDisk();
+      const fastModel = synced.find(m => m.id === MODEL_KEYS.TEXT_FAST);
+      if (!fastModel) {
         setPhase('transcript');
+        Alert.alert(
+          'Model needed',
+          'Download Qwen3 1.7B · Fast to summarize.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Download', onPress: () => navigation.navigate('Download', { modelId: MODEL_KEYS.TEXT_FAST, returnTo: 'Voice', returnParams: {} }) },
+          ],
+        );
         return;
       }
-      const m = (preselectedModelId ? models.find(x => x.id === preselectedModelId) : null) ?? models[0];
       const settings = await getSettings();
-      const modelConfig: any = { ctx_size: 2048, device: settings.accelerator === 'gpu' ? 'gpu' : 'cpu' };
-      if (m.projectionModelSrc) modelConfig.projectionModelSrc = m.projectionModelSrc;
-      const mid = await llmManager.ensure(m, modelConfig);
+      const modelConfig: any = { ctx_size: 1024, device: settings.accelerator === 'gpu' ? 'gpu' : 'cpu' };
+      const mid = await llmManager.ensure(fastModel, modelConfig);
       let out = '';
       const run = completion({
         modelId: mid,
@@ -172,10 +170,10 @@ export default function VoiceScreen() {
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') out += (ev as any).text;
       }
-      setSummary(out.trim() || 'Could not generate summary.');
+      setSummary(out.trim() || "Couldn't summarize. Transcript is still saved.");
       setPhase('transcript');
     } catch (e) {
-      if (!(e instanceof InferenceCancelledError)) setSummary('Summarization failed.');
+      if (!(e instanceof InferenceCancelledError)) setSummary("Couldn't summarize. Transcript is still saved.");
       setPhase('transcript');
     }
   };
@@ -213,15 +211,31 @@ export default function VoiceScreen() {
               <IconVoice size={26} color={theme.text} strokeWidth={1.6} />
             </View>
             <Text style={[styles.title, { color: theme.text }]}>Peek Voice</Text>
-            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Upload audio. Get a transcript and summary.</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Record or upload audio. Get a transcript and summary.</Text>
             {initError
               ? <Text selectable style={[styles.errText, { color: theme.error }]}>{initError}</Text>
               : null}
           </View>
 
           <View style={styles.body}>
+            {/* PRIMARY — Record Now (yellow) */}
             <TouchableOpacity
-              style={[styles.actionCard, { backgroundColor: theme.card, borderColor: theme.border }]}
+              style={[styles.primaryAction, { backgroundColor: theme.accent }]}
+              onPress={handleRecord}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.primaryActionIcon, { backgroundColor: 'rgba(0,0,0,0.15)' }]}>
+                <IconMic size={20} color={theme.accentFg} />
+              </View>
+              <View style={styles.actionText}>
+                <Text style={[styles.actionTitle, { color: theme.accentFg }]}>Record Now</Text>
+                <Text style={[styles.actionSub, { color: theme.accentFg + 'BB' }]}>Transcribe on-device with Whisper</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* SECONDARY — Upload (outline) */}
+            <TouchableOpacity
+              style={[styles.secondaryAction, { backgroundColor: theme.card, borderColor: theme.border }]}
               onPress={handleUpload}
               activeOpacity={0.72}
             >
@@ -233,29 +247,7 @@ export default function VoiceScreen() {
                 <Text style={[styles.actionSub, { color: theme.textSecondary }]}>MP3, WAV, M4A supported</Text>
               </View>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-              onPress={handleRecord}
-              activeOpacity={0.72}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: theme.cardAlt }]}>
-                <IconMic size={18} color={theme.text} />
-              </View>
-              <View style={styles.actionText}>
-                <Text style={[styles.actionTitle, { color: theme.text }]}>Record Now</Text>
-                <Text style={[styles.actionSub, { color: theme.textSecondary }]}>Transcribe in real-time on-device</Text>
-              </View>
-            </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            style={[styles.cta, { backgroundColor: theme.accent }]}
-            onPress={handleUpload}
-            activeOpacity={0.85}
-          >
-            <Text style={[styles.ctaText, { color: theme.accentFg }]}>Upload Audio</Text>
-          </TouchableOpacity>
         </>
       )}
 
@@ -266,7 +258,7 @@ export default function VoiceScreen() {
             <View style={[styles.recordSquare, { backgroundColor: theme.error }]} />
           </Animated.View>
           <Text style={[styles.recordTime, { color: theme.text }]}>{fmtTime(recordingTime)}</Text>
-          <Text style={[styles.recordLabel, { color: theme.textSecondary }]}>Recording...</Text>
+          <Text style={[styles.recordLabel, { color: theme.textSecondary }]}>Recording…</Text>
           <TouchableOpacity
             style={[styles.stopBtn, { backgroundColor: theme.error }]}
             onPress={stopRecording}
@@ -281,7 +273,7 @@ export default function VoiceScreen() {
       {phase === 'transcribing' && (
         <View style={styles.centeredPane}>
           <ThinkDots color={theme.accent} />
-          <Text style={[styles.spinLabel, { color: theme.text }]}>Transcribing...</Text>
+          <Text style={[styles.spinLabel, { color: theme.text }]}>Transcribing…</Text>
           <Text style={[styles.spinSub, { color: theme.textSecondary }]}>Running Whisper on-device</Text>
         </View>
       )}
@@ -290,7 +282,7 @@ export default function VoiceScreen() {
       {phase === 'summarizing' && (
         <View style={styles.centeredPane}>
           <ThinkDots color={theme.accent} />
-          <Text style={[styles.spinLabel, { color: theme.text }]}>Summarizing...</Text>
+          <Text style={[styles.spinLabel, { color: theme.text }]}>Summarizing…</Text>
         </View>
       )}
 
@@ -377,7 +369,15 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 14 },
   errText: { fontSize: 12, marginTop: 4 },
   body: { flex: 1, padding: 20, gap: 12 },
-  actionCard: {
+  primaryAction: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    borderRadius: 16, padding: 18,
+  },
+  primaryActionIcon: {
+    width: 42, height: 42, borderRadius: 12,
+    justifyContent: 'center', alignItems: 'center', flexShrink: 0,
+  },
+  secondaryAction: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     borderRadius: 14, borderWidth: 1, padding: 16,
   },
@@ -386,13 +386,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', flexShrink: 0,
   },
   actionText: { flex: 1, gap: 3 },
-  actionTitle: { fontSize: 14, fontWeight: '600' },
+  actionTitle: { fontSize: 14, fontWeight: '700' },
   actionSub: { fontSize: 12 },
-  cta: {
-    marginHorizontal: 20, marginBottom: 44, borderRadius: 14,
-    paddingVertical: 16, alignItems: 'center',
-  },
-  ctaText: { fontSize: 15, fontWeight: '700' },
   centeredPane: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, gap: 12 },
   recordRing: {
     width: 100, height: 100, borderRadius: 50, borderWidth: 3,

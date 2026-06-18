@@ -9,9 +9,8 @@ import { useTheme, useSidebar } from '../navigation/AppNavigator';
 import {
   IconLens, IconVoice, IconScribe, IconDeep, IconRelay, IconMenu,
 } from '../components/Icons';
-import ModelPickerSheet from '../components/ModelPickerSheet';
-import { getDownloadedModels, getQuickChatDefaultId, setQuickChatDefaultId } from '../utils/storage';
-import { isVisionModel, isTextModel } from '../utils/models';
+import { syncModelsFromDisk } from '../utils/storage';
+import { MODEL_KEYS } from '../utils/models';
 import { DownloadedModel } from '../types';
 
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -19,50 +18,62 @@ const H_PAD = 12;
 const CARD_GAP = 10;
 const CARD_W = (SW - H_PAD * 2 - CARD_GAP) / 2;
 
+type ModuleKey = 'Lens' | 'Voice' | 'Scribe' | 'Deep' | 'QuickChat' | 'Relay';
+
 interface Module {
-  id: string;
+  id: ModuleKey;
   screen: string;
   label: string;
   title: string;
   desc: string;
   icon: (color: string) => React.ReactNode;
   fullWidth?: boolean;
-  skipPicker?: boolean;
-  filterFn?: (m: DownloadedModel) => boolean;
+  modelKey?: string;      // which model key this module needs
+  requiresBoth?: boolean; // vision: requires main + mmproj
 }
 
 const MODULES: Module[] = [
   {
-    id: 'Lens', screen: 'Lens', label: 'Vision Models', title: 'Peek Lens',
-    desc: 'Scan food, labels & images — instant health insights',
+    id: 'Lens', screen: 'Lens', label: 'Vision AI', title: 'Peek Lens',
+    desc: 'Scan food, labels & images — instant insights',
     icon: (c) => <IconLens size={20} color={c} />,
-    filterFn: isVisionModel,
+    modelKey: MODEL_KEYS.VISION,
+    requiresBoth: true,
   },
   {
     id: 'Voice', screen: 'Voice', label: 'Whisper · Built-in', title: 'Peek Voice',
     desc: 'Record or upload audio — transcribe & summarize',
     icon: (c) => <IconVoice size={20} color={c} />,
-    skipPicker: true,
+    // Whisper is always available (descriptor model); text summary needs text-fast
+    // but Voice handles its own download prompt internally — no lifecycle gate
   },
   {
-    id: 'Scribe', screen: 'Scribe', label: 'MedPsy Health AI', title: 'Peek Scribe',
-    desc: 'Draft meal plans, health notes, and more',
+    id: 'Scribe', screen: 'Scribe', label: 'Qwen3 · Fast AI', title: 'Peek Scribe',
+    desc: 'Draft documents, meal plans, and notes',
     icon: (c) => <IconScribe size={20} color={c} />,
-    filterFn: isTextModel,
+    modelKey: MODEL_KEYS.TEXT_FAST,
   },
   {
-    id: 'Deep', screen: 'Deep', label: 'MedPsy Health AI', title: 'Peek Deep',
-    desc: 'Research health documents privately on-device',
+    id: 'Deep', screen: 'Deep', label: 'Qwen3 · Fast AI', title: 'Peek Deep',
+    desc: 'Research documents privately on-device',
     icon: (c) => <IconDeep size={20} color={c} />,
-    filterFn: isTextModel,
+    modelKey: MODEL_KEYS.TEXT_FAST,
+  },
+  {
+    id: 'QuickChat', screen: 'QuickChat', label: 'Quick AI', title: 'Quick Chat',
+    desc: 'Ask anything — fast, private, on-device',
+    icon: (c) => <IconScribe size={20} color={c} />,
+    modelKey: MODEL_KEYS.TEXT_FAST,
   },
   {
     id: 'Relay', screen: 'Relay', label: 'P2P · Coming Soon', title: 'Peek Relay',
     desc: 'Offload heavy tasks to a nearby device',
     icon: (c) => <IconRelay size={20} color={c} />,
-    fullWidth: true, skipPicker: true,
+    fullWidth: true,
   },
 ];
+
+type ModelStatus = 'ready' | 'needs-download' | 'unknown';
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
@@ -71,12 +82,8 @@ export default function HomeScreen() {
   const { open: openSidebar } = useSidebar();
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Model picker state
-  const [pickerVisible, setPickerVisible] = useState(false);
-  const [pickerModule, setPickerModule] = useState<Module | null>(null);
-  const [pickerModels, setPickerModels] = useState<DownloadedModel[]>([]);
-  const [pickerIsQuickChat, setPickerIsQuickChat] = useState(false);
-  const [pickerDefaultId, setPickerDefaultId] = useState<string | null>(null);
+  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const [downloadedModels, setDownloadedModels] = useState<DownloadedModel[]>([]);
 
   // FAB drag state
   const [fabPos, setFabPos] = useState({ x: 20, y: SH - 120 });
@@ -118,64 +125,71 @@ export default function HomeScreen() {
     Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }).start();
   }, []);
 
-  const handleModuleTap = async (mod: Module) => {
-    if (mod.skipPicker) {
+  // Refresh model status every time screen focuses
+  useFocusEffect(useCallback(() => {
+    syncModelsFromDisk().then(models => {
+      setDownloadedModels(models);
+      setDownloadedIds(new Set(models.map(m => m.id)));
+    }).catch(() => {});
+  }, []));
+
+  const getStatus = (mod: Module): ModelStatus => {
+    if (!mod.modelKey) return 'ready'; // no model needed (Voice, Relay)
+    const dm = downloadedModels.find(m => m.id === mod.modelKey);
+    if (!dm) return 'needs-download';
+    if (mod.requiresBoth && !dm.projectionModelSrc) return 'needs-download';
+    return 'ready';
+  };
+
+  const enterModule = async (mod: Module) => {
+    if (mod.id === 'Relay') {
       navigation.navigate(mod.screen);
       return;
     }
-    const all = await getDownloadedModels();
-    const compatible = mod.filterFn ? all.filter(mod.filterFn) : all;
-    if (compatible.length === 0) {
-      // No compatible model — send to Models with auto-launch context so
-      // downloading a model continues directly into the module
-      navigation.navigate('Models', {
-        autoLaunch: { screen: mod.screen, label: mod.title },
+    const status = getStatus(mod);
+    if (status === 'needs-download' && mod.modelKey) {
+      navigation.navigate('Download', {
+        modelId: mod.modelKey,
+        returnTo: mod.screen,
+        returnParams: {},
       });
       return;
     }
-    setPickerModule(mod);
-    setPickerModels(compatible);
-    setPickerIsQuickChat(false);
-    setPickerDefaultId(null);
-    setPickerVisible(true);
+    navigation.navigate(mod.screen);
   };
 
-  const handleFabTap = async () => {
-    const all = await getDownloadedModels();
-    if (all.length === 0) {
-      navigation.navigate('Models', { autoLaunch: { screen: 'QuickChat', label: 'Quick Chat' } });
-      return;
-    }
-    // Prefer text models; sort by size smallest first
-    const textModels = all.filter(isTextModel);
-    const pool = textModels.length > 0 ? textModels : all;
-    const sorted = [...pool].sort((a, b) => (a.sizeBytes || 0) - (b.sizeBytes || 0));
-    const defaultId = await getQuickChatDefaultId();
-    // If default is set and still downloaded, go straight in
-    if (defaultId && sorted.find(m => m.id === defaultId)) {
-      navigation.navigate('QuickChat', { modelId: defaultId });
-      return;
-    }
-    // Otherwise show picker with smallest pre-selected
-    setPickerModule(null);
-    setPickerModels(sorted);
-    setPickerIsQuickChat(true);
-    setPickerDefaultId(sorted[0]?.id ?? null);
-    setPickerVisible(true);
-  };
-
-  const handlePickerStart = async (model: DownloadedModel, saveDefault: boolean) => {
-    setPickerVisible(false);
-    if (pickerIsQuickChat) {
-      if (saveDefault) await setQuickChatDefaultId(model.id);
-      setTimeout(() => navigation.navigate('QuickChat', { modelId: model.id }), 180);
-    } else if (pickerModule) {
-      setTimeout(() => navigation.navigate(pickerModule.screen, { modelId: model.id }), 180);
+  const handleFabTap = () => {
+    const status = getStatus(MODULES.find(m => m.id === 'QuickChat')!);
+    if (status === 'needs-download') {
+      navigation.navigate('Download', {
+        modelId: MODEL_KEYS.TEXT_FAST,
+        returnTo: 'QuickChat',
+        returnParams: {},
+      });
+    } else {
+      navigation.navigate('QuickChat');
     }
   };
 
-  const grid = MODULES.filter(m => !m.fullWidth);
+  const grid = MODULES.filter(m => !m.fullWidth && m.id !== 'QuickChat');
   const full = MODULES.filter(m => m.fullWidth);
+
+  const statusBadge = (mod: Module) => {
+    const s = getStatus(mod);
+    if (s === 'needs-download') {
+      return (
+        <View style={[styles.statusPill, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
+          <Text style={[styles.statusPillText, { color: theme.textSecondary }]}>Download</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={[styles.statusPill, { backgroundColor: theme.accent + '22', borderColor: theme.accent + '55' }]}>
+        <View style={[styles.statusDot, { backgroundColor: theme.accent }]} />
+        <Text style={[styles.statusPillText, { color: theme.accent }]}>Ready</Text>
+      </View>
+    );
+  };
 
   return (
     <Animated.View style={[styles.root, { backgroundColor: theme.background, opacity: fadeAnim }]}>
@@ -201,7 +215,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               key={mod.id}
               style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border, width: CARD_W }]}
-              onPress={() => handleModuleTap(mod)}
+              onPress={() => enterModule(mod)}
               activeOpacity={0.72}
             >
               <View style={[styles.cardIcon, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
@@ -210,6 +224,7 @@ export default function HomeScreen() {
               <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>{mod.label}</Text>
               <Text style={[styles.cardTitle, { color: theme.text }]}>{mod.title}</Text>
               <Text style={[styles.cardDesc, { color: theme.textSecondary }]} numberOfLines={2}>{mod.desc}</Text>
+              {mod.modelKey ? statusBadge(mod) : null}
             </TouchableOpacity>
           ))}
         </View>
@@ -219,7 +234,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             key={mod.id}
             style={[styles.cardFull, { backgroundColor: theme.card, borderColor: theme.border }]}
-            onPress={() => handleModuleTap(mod)}
+            onPress={() => enterModule(mod)}
             activeOpacity={0.72}
           >
             <View style={[styles.cardIcon, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
@@ -239,7 +254,7 @@ export default function HomeScreen() {
         <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* Draggable FAB */}
+      {/* Draggable FAB — Quick Chat */}
       <Animated.View
         style={[
           styles.fab,
@@ -255,26 +270,12 @@ export default function HomeScreen() {
       >
         <View style={[styles.fabPulse, { backgroundColor: theme.accent, shadowColor: theme.accent }]} />
         <View>
-          <Text style={[styles.fabLabel, { color: theme.text }]}>Ask Health AI</Text>
-          <Text style={[styles.fabSub, { color: theme.textSecondary }]}>MedPsy · on-device</Text>
+          <Text style={[styles.fabLabel, { color: theme.text }]}>Quick Chat</Text>
+          <Text style={[styles.fabSub, { color: theme.textSecondary }]}>
+            {getStatus(MODULES.find(m => m.id === 'QuickChat')!) === 'ready' ? 'on-device · ready' : 'tap to download'}
+          </Text>
         </View>
       </Animated.View>
-
-      {/* Model Picker Sheet */}
-      <ModelPickerSheet
-        visible={pickerVisible}
-        moduleTitle={pickerIsQuickChat ? 'Quick Chat' : (pickerModule?.title ?? '')}
-        moduleIcon={pickerIsQuickChat
-          ? <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: theme.accent }} />
-          : pickerModule?.icon(theme.text)}
-        models={pickerModels}
-        initialModelId={pickerDefaultId}
-        showSetDefault={pickerIsQuickChat}
-        startLabel={pickerIsQuickChat ? 'Start Chat' : 'Launch'}
-        onStart={handlePickerStart}
-        onClose={() => setPickerVisible(false)}
-        onGetModels={() => { setPickerVisible(false); setTimeout(() => navigation.navigate('Models'), 200); }}
-      />
     </Animated.View>
   );
 }
@@ -298,7 +299,7 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: CARD_GAP },
   card: {
     borderRadius: 16, borderWidth: 1, padding: 14,
-    gap: 8, minHeight: 138,
+    gap: 6, minHeight: 145,
   },
   cardFull: {
     borderRadius: 16, borderWidth: 1, padding: 16,
@@ -313,6 +314,13 @@ const styles = StyleSheet.create({
   cardMeta: { fontSize: 10, fontWeight: '500' },
   cardTitle: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2, lineHeight: 18 },
   cardDesc: { fontSize: 12, lineHeight: 16 },
+  statusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    alignSelf: 'flex-start', borderRadius: 20, borderWidth: 1,
+    paddingHorizontal: 7, paddingVertical: 3, marginTop: 2,
+  },
+  statusDot: { width: 5, height: 5, borderRadius: 2.5 },
+  statusPillText: { fontSize: 9, fontWeight: '600', letterSpacing: 0.3 },
   betaBadge: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
   betaText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
   fab: {
