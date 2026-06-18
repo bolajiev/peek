@@ -9,7 +9,7 @@ import { Paths, File, Directory } from 'expo-file-system';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext } from '../utils/ragService';
-import { syncModelsFromDisk, getSettings, getDefaultModelId } from '../utils/storage';
+import { syncModelsFromDisk, getSettings, getDefaultModelId, toPath } from '../utils/storage';
 import { completion, cancel, loadModel, unloadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
 import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
@@ -71,7 +71,7 @@ export default function DeepScreen() {
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
       const modelConfig: any = { ctx_size: 4096, device };
-      if (model.projectionModelSrc) modelConfig.projectionModelSrc = model.projectionModelSrc;
+      if (model.projectionModelSrc) modelConfig.projectionModelSrc = toPath(model.projectionModelSrc);
       const mid = await llmManager.ensure(model, modelConfig, setLlmProgress);
       setLlmModelId(mid);
     } catch (err: any) {
