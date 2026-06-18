@@ -12,8 +12,9 @@ import { ragIngestText, ragQuery, buildRagContext } from '../utils/ragService';
 import { getDownloadedModels, getSettings } from '../utils/storage';
 import { completion, cancel, loadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
-import { isTextModel } from '../utils/models';
+import { isTextModel, SYSTEM_PROMPTS } from '../utils/models';
 import MarkdownText from '../components/MarkdownText';
+import CopyButton from '../components/CopyButton';
 
 type Phase = 'idle' | 'ingesting' | 'ready' | 'thinking';
 
@@ -123,9 +124,7 @@ export default function DeepScreen() {
       const docs = await ragQuery(embedIdRef.current, q, 5);
       const ctx = buildRagContext(docs);
 
-      const sysPrompt = `You are Peek Deep, a private research assistant. The user loaded a local document for analysis.
-Answer questions strictly based on the provided context.${ctx}
-If the answer isn't in the context, say so clearly. Never fabricate information.`;
+      const sysPrompt = `${SYSTEM_PROMPTS.deep}\n\n${ctx}`;
 
       const msgs = [
         { role: 'system', content: sysPrompt },
@@ -240,6 +239,11 @@ If the answer isn't in the context, say so clearly. Never fabricate information.
                     <Text selectable style={[styles.bubbleText, { color: theme.accentFg }]}>{msg.text}</Text>
                   )}
                 </View>
+                {msg.role === 'assistant' && msg.text ? (
+                  <View style={styles.bubbleActions}>
+                    <CopyButton text={msg.text} color={theme.textSecondary} size={11} />
+                  </View>
+                ) : null}
               </View>
             ))}
             {phase === 'thinking' && (
@@ -336,9 +340,10 @@ const styles = StyleSheet.create({
   pickBtnText: { fontSize: 15, fontWeight: '700' },
   scroll: { flex: 1 },
   scrollContent: { padding: 20, gap: 10, flexGrow: 1 },
-  turn: { maxWidth: '85%' },
+  turn: { maxWidth: '85%', gap: 4 },
   turnLeft: { alignSelf: 'flex-start' },
   turnRight: { alignSelf: 'flex-end' },
+  bubbleActions: { flexDirection: 'row', paddingHorizontal: 4 },
   bubble: { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12 },
   bubbleText: { fontSize: 15, lineHeight: 22 },
   inputBar: {

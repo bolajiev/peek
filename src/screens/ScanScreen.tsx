@@ -15,7 +15,7 @@ import { isVisionModel } from '../utils/models';
 import { logInference } from '../utils/auditLogger';
 import { ModelInfo } from '../types';
 
-const SYSTEM_PROMPT = `You are Peek, a personal AI assistant with vision. Answer the user's question about the image accurately and concisely. Focus only on what they asked. Do not add disclaimers unless medically necessary.`;
+const SYSTEM_PROMPT = `You are Peek Health, a private health and nutrition AI with vision. Answer the user's question about the image accurately and concisely — focus on nutritional value, ingredients, health implications, or medical information where relevant. For health decisions, remind the user to consult a professional.`;
 
 
 
@@ -218,97 +218,69 @@ export default function ScanScreen() {
     <View style={styles.container}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back" mode="picture" zoom={zoom} mute>
 
-        {/* Top bar */}
+        {/* Top bar — back + zoom indicator */}
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
             <Text style={styles.backText}>← Back</Text>
           </TouchableOpacity>
-          <View style={[styles.accentPill, { backgroundColor: theme.accent }]}>
-            <Text style={styles.accentPillText}>Scan</Text>
-          </View>
-          {/* Zoom indicator in top bar */}
           <View style={styles.zoomBadge}>
             <Text style={styles.zoomText}>{zoomLabel}</Text>
           </View>
         </View>
 
-        {/* Scan frame + side zoom buttons */}
-        {!isAnalyzing && (
-          <View style={styles.frameContainer}>
-            <Animated.View style={[styles.frame, { transform: [{ scale: pulseAnim }] }]}>
-              {(['TL', 'TR', 'BL', 'BR'] as const).map((pos) => (
-                <View key={pos} style={[styles.corner, styles[`corner${pos}`], { borderColor: theme.accent }]} />
-              ))}
-            </Animated.View>
-            {/* Zoom buttons on the right */}
-            <View style={styles.zoomBtns}>
-              <TouchableOpacity
-                style={styles.zoomBtn}
-                onPress={() => adjustZoom(ZOOM_STEP)}
-                disabled={zoom >= 1}
-              >
-                <Text style={styles.zoomBtnText}>+</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.zoomBtn}
-                onPress={() => adjustZoom(-ZOOM_STEP)}
-                disabled={zoom <= 0}
-              >
-                <Text style={styles.zoomBtnText}>−</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+        {/* Viewfinder spacer (no brackets per spec) */}
+        <View style={styles.viewfinderFlex} />
 
         {/* Analyzing overlay */}
         {isAnalyzing && (
           <View style={styles.analyzeOverlay}>
             {previewUri && <Image source={{ uri: previewUri }} style={styles.previewThumb} />}
-            <View style={[styles.analyzeCard, { backgroundColor: 'rgba(0,0,0,0.8)' }]}>
-              <ActivityDots color={theme.accent} />
-              <Text style={[styles.analyzeText, { color: '#fff' }]}>{analysisText}</Text>
-            </View>
+            <ActivityDots color={theme.accent} />
+            <Text style={[styles.analyzeText, { color: '#fff' }]}>{analysisText}</Text>
           </View>
         )}
 
-        {/* Bottom input + controls */}
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.bottomSection}>
-            <View style={[styles.questionBar, { backgroundColor: 'rgba(0,0,0,0.65)' }]}>
-              <TextInput
-                style={styles.questionInput}
-                placeholder="Ask anything about this..."
-                placeholderTextColor="rgba(255,255,255,0.45)"
-                value={question}
-                onChangeText={setQuestion}
-                returnKeyType="done"
-                blurOnSubmit
-              />
-            </View>
-            <View style={styles.captureRow}>
-              <TouchableOpacity style={[styles.sideBtn, { opacity: isAnalyzing ? 0.4 : 1 }]} onPress={handleGallery} disabled={isAnalyzing}>
-                <View style={[styles.galleryIcon, { borderColor: 'rgba(255,255,255,0.6)' }]}>
-                  <View style={[styles.galleryInner, { backgroundColor: 'rgba(255,255,255,0.3)' }]} />
-                </View>
-                <Text style={styles.sideBtnLabel}>Gallery</Text>
-              </TouchableOpacity>
-
-              <Animated.View style={{ transform: [{ scale: captureScale }] }}>
-                <TouchableOpacity
-                  style={[styles.captureBtn, { borderColor: theme.accent, opacity: isAnalyzing ? 0.4 : 1 }]}
-                  onPress={handleCapture}
-                  disabled={isAnalyzing}
-                  activeOpacity={0.85}
-                >
-                  <View style={[styles.captureInner, { backgroundColor: theme.accent }]} />
-                </TouchableOpacity>
-              </Animated.View>
-
-              <View style={styles.sideBtn} />
-            </View>
-          </View>
-        </KeyboardAvoidingView>
       </CameraView>
+
+      {/* Solid bottom bar — outside CameraView so it's always opaque */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={[styles.bottomBar, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
+          <TextInput
+            style={[styles.questionInput, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
+            placeholder="Ask about this image…"
+            placeholderTextColor={theme.textSecondary}
+            value={question}
+            onChangeText={setQuestion}
+            returnKeyType="done"
+            blurOnSubmit
+          />
+          <View style={styles.captureRow}>
+            <TouchableOpacity
+              style={[styles.sideBtn, { opacity: isAnalyzing ? 0.4 : 1 }]}
+              onPress={handleGallery}
+              disabled={isAnalyzing}
+            >
+              <View style={[styles.galleryIcon, { borderColor: theme.border, backgroundColor: theme.card }]}>
+                <View style={[styles.galleryInner, { backgroundColor: theme.textSecondary }]} />
+              </View>
+              <Text style={[styles.sideBtnLabel, { color: theme.textSecondary }]}>Gallery</Text>
+            </TouchableOpacity>
+
+            <Animated.View style={{ transform: [{ scale: captureScale }] }}>
+              <TouchableOpacity
+                style={[styles.captureBtn, { borderColor: theme.accent, opacity: isAnalyzing ? 0.4 : 1 }]}
+                onPress={handleCapture}
+                disabled={isAnalyzing}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.captureInner, { backgroundColor: theme.accent }]} />
+              </TouchableOpacity>
+            </Animated.View>
+
+            <View style={styles.sideBtn} />
+          </View>
+        </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -346,46 +318,37 @@ async function findModel(preselectedId?: string): Promise<ModelInfo | null> {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   camera: { flex: 1 },
-  topBar: { flexDirection: 'row', alignItems: 'center', paddingTop: 60, paddingHorizontal: 16, paddingBottom: 10, backgroundColor: 'rgba(0,0,0,0.45)', gap: 12 },
+  topBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingTop: 60, paddingHorizontal: 16, paddingBottom: 10,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
   backBtn: { paddingRight: 4 },
   backText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  accentPill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
-  accentPillText: { fontSize: 13, fontWeight: '800', color: '#000' },
-  zoomBadge: { marginLeft: 'auto', backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  zoomBadge: { backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   zoomText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  frameContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  zoomBtns: {
-    position: 'absolute', right: 20, top: '50%',
-    gap: 10, alignItems: 'center',
-    transform: [{ translateY: -40 }],
+  viewfinderFlex: { flex: 1 },
+  analyzeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center', alignItems: 'center', gap: 14,
+    backgroundColor: 'rgba(0,0,0,0.72)',
   },
-  zoomBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)',
-  },
-  zoomBtnText: { color: '#fff', fontSize: 22, fontWeight: '300', lineHeight: 26 },
-  frame: { width: 260, height: 260, position: 'relative' },
-  corner: { position: 'absolute', width: 32, height: 32 },
-  cornerTL: { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3 },
-  cornerTR: { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3 },
-  cornerBL: { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3 },
-  cornerBR: { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3 },
-  analyzeOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16, backgroundColor: 'rgba(0,0,0,0.6)' },
-  previewThumb: { width: 120, height: 120, borderRadius: 14 },
-  analyzeCard: { alignItems: 'center', padding: 20, borderRadius: 16, gap: 4 },
+  previewThumb: { width: 110, height: 110, borderRadius: 14 },
   analyzeText: { fontSize: 14, fontWeight: '600' },
-  bottomSection: { paddingBottom: 48 },
-  questionBar: { marginHorizontal: 16, marginBottom: 12, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 10 },
-  questionInput: { color: '#fff', fontSize: 15 },
-  captureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 40 },
+  // Solid bottom bar — outside CameraView
+  bottomBar: { borderTopWidth: 1, paddingTop: 14, paddingHorizontal: 16, paddingBottom: 32 },
+  questionInput: {
+    borderRadius: 14, borderWidth: 1,
+    paddingHorizontal: 16, paddingVertical: 12,
+    fontSize: 15, marginBottom: 14,
+  },
+  captureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24 },
   sideBtn: { width: 56, alignItems: 'center', gap: 5 },
   galleryIcon: { width: 38, height: 32, borderRadius: 6, borderWidth: 1.5, overflow: 'hidden', justifyContent: 'flex-end' },
   galleryInner: { height: 10 },
-  sideBtnLabel: { color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '600' },
-  captureBtn: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, justifyContent: 'center', alignItems: 'center' },
-  captureInner: { width: 64, height: 64, borderRadius: 32 },
+  sideBtnLabel: { fontSize: 11, fontWeight: '600' },
+  captureBtn: { width: 76, height: 76, borderRadius: 38, borderWidth: 3, justifyContent: 'center', alignItems: 'center' },
+  captureInner: { width: 60, height: 60, borderRadius: 30 },
   permText: { fontSize: 17, textAlign: 'center', lineHeight: 24 },
   permBtn: { paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14 },
   permBtnText: { fontSize: 16, fontWeight: '800' },

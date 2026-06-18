@@ -9,13 +9,12 @@ import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { getDownloadedModels, getSettings } from '../utils/storage';
-import { isTextModel } from '../utils/models';
+import { isTextModel, SYSTEM_PROMPTS } from '../utils/models';
 import { IconBack, IconSend } from '../components/Icons';
 import MarkdownText from '../components/MarkdownText';
+import CopyButton from '../components/CopyButton';
 
 interface Msg { id: string; role: 'user' | 'assistant'; text: string; streaming?: boolean; }
-
-const SYSTEM = 'You are Peek, a fast private AI assistant. Keep answers concise. You run fully on-device.';
 
 export default function QuickChatScreen() {
   const navigation = useNavigation<any>();
@@ -85,7 +84,7 @@ export default function QuickChatScreen() {
 
     try {
       const history: any[] = [
-        { role: 'system', content: SYSTEM },
+        { role: 'system', content: SYSTEM_PROMPTS.quickchat },
         ...all.map(m => ({ role: m.role, content: m.text })),
       ];
       const run = completion({ modelId: mid, history, stream: true });
@@ -195,6 +194,11 @@ export default function QuickChatScreen() {
                 </Text>
               )}
             </View>
+            {msg.role === 'assistant' && !msg.streaming && msg.text ? (
+              <View style={styles.msgActions}>
+                <CopyButton text={msg.text} color={theme.textSecondary} size={11} />
+              </View>
+            ) : null}
           </View>
         ))}
         <View style={{ height: 12 }} />
@@ -266,8 +270,9 @@ const styles = StyleSheet.create({
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 10, paddingVertical: 80 },
   emptyTitle: { fontSize: 22, fontWeight: '800' },
   emptySub: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
-  msgRow: { maxWidth: '82%', alignSelf: 'flex-start' },
+  msgRow: { maxWidth: '82%', alignSelf: 'flex-start', gap: 4 },
   msgRowUser: { alignSelf: 'flex-end' },
+  msgActions: { flexDirection: 'row', paddingHorizontal: 4, paddingBottom: 2 },
   bubble: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 11 },
   bubbleText: { fontSize: 14, lineHeight: 21 },
   inputWrap: {

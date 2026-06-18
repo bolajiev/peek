@@ -10,10 +10,11 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { getDownloadedModels, getSettings, toPath } from '../utils/storage';
-import { isTextModel } from '../utils/models';
+import { isTextModel, SYSTEM_PROMPTS } from '../utils/models';
 import { Paths, File, Directory } from 'expo-file-system';
 import { IconVoice, IconUpload, IconMic, IconBack } from '../components/Icons';
 import MarkdownText from '../components/MarkdownText';
+import CopyButton from '../components/CopyButton';
 
 type Phase = 'idle' | 'recording' | 'transcribing' | 'transcript' | 'summarizing';
 
@@ -163,7 +164,7 @@ export default function VoiceScreen() {
       const run = completion({
         modelId: mid,
         history: [
-          { role: 'system', content: 'Summarize the following transcript concisely in 2-4 bullet points.' },
+          { role: 'system', content: SYSTEM_PROMPTS.voice },
           { role: 'user', content: transcript },
         ],
         stream: true,
@@ -296,14 +297,20 @@ export default function VoiceScreen() {
       {/* ── Transcript ── */}
       {phase === 'transcript' && (
         <ScrollView style={styles.resultScroll} contentContainerStyle={styles.resultContent} showsVerticalScrollIndicator={false}>
-          <Text style={[styles.sectionHead, { color: theme.textSecondary }]}>TRANSCRIPT</Text>
+          <View style={styles.sectionRow}>
+            <Text style={[styles.sectionHead, { color: theme.textSecondary }]}>TRANSCRIPT</Text>
+            <CopyButton text={transcript} color={theme.textSecondary} size={11} />
+          </View>
           <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <Text selectable style={[styles.resultText, { color: theme.text }]}>{transcript}</Text>
           </View>
 
           {summary ? (
             <>
-              <Text style={[styles.sectionHead, { color: theme.textSecondary, marginTop: 20 }]}>SUMMARY</Text>
+              <View style={[styles.sectionRow, { marginTop: 20 }]}>
+                <Text style={[styles.sectionHead, { color: theme.textSecondary }]}>SUMMARY</Text>
+                <CopyButton text={summary} color={theme.textSecondary} size={11} />
+              </View>
               <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <MarkdownText color={theme.text} fontSize={15} lineHeight={23}>{summary}</MarkdownText>
               </View>
@@ -400,7 +407,8 @@ const styles = StyleSheet.create({
   spinSub: { fontSize: 13 },
   resultScroll: { flex: 1 },
   resultContent: { padding: 20, gap: 8 },
-  sectionHead: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 4 },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  sectionHead: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase' },
   resultBox: { borderRadius: 14, borderWidth: 1, padding: 16 },
   resultText: { fontSize: 15, lineHeight: 23 },
   summarizeBtn: {

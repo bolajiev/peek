@@ -17,68 +17,18 @@ import {
   MMPROJ_OCR_0_6B_MULTIMODAL_F16,
   GEMMA4_4B_MULTIMODAL_Q4_K_M,
   MMPROJ_GEMMA4_4B_MULTIMODAL_BF16,
-  QWEN3_600M_INST_Q4,
-  QWEN3_1_7B_INST_Q4,
-  QWEN3_4B_INST_Q4_K_M,
-  LLAMA_3_2_1B_INST_Q4_0,
 } from '@qvac/sdk';
 import { ModelInfo } from '../types';
 
 export const AVAILABLE_MODELS: ModelInfo[] = [
-  // ── Text LLMs (Scribe, Deep, Quick Chat, Voice summary) ───────────────────
+  // ── Health AI (Text) — MedPsy powered by MedGemma ─────────────────────────
   {
-    id: 'qwen3-0.6b-text',
-    name: 'Qwen3-0.6B Chat',
-    modelType: 'text',
-    badge: 'Fastest',
-    badgeColor: '#FDC803',
-    description: 'Smallest text model. Instant responses, very low RAM. Best for Quick Chat and Voice summaries.',
-    size: '382MB',
-    sizeBytes: 382_000_000,
-    modelSrc: QWEN3_600M_INST_Q4.src,
-    supports: ['text'],
-  },
-  {
-    id: 'llama-1b-text',
-    name: 'Llama 3.2-1B Chat',
-    modelType: 'text',
-    description: "Meta's compact instruct model. Fast and versatile for chat and writing tasks.",
-    size: '773MB',
-    sizeBytes: 773_000_000,
-    modelSrc: LLAMA_3_2_1B_INST_Q4_0.src,
-    supports: ['text'],
-  },
-  {
-    id: 'qwen3-1.7b-text',
-    name: 'Qwen3-1.7B Chat',
+    id: 'medpsy-1.7b',
+    name: 'MedPsy · Fast',
     modelType: 'text',
     badge: 'Recommended',
     badgeColor: '#FDC803',
-    description: 'Best balance of speed and quality for text tasks. Great for Scribe, Deep, and Quick Chat.',
-    size: '1GB',
-    sizeBytes: 1_057_000_000,
-    modelSrc: QWEN3_1_7B_INST_Q4.src,
-    supports: ['text'],
-  },
-  {
-    id: 'qwen3-4b-text',
-    name: 'Qwen3-4B Chat',
-    modelType: 'text',
-    badge: 'High Quality',
-    badgeColor: '#EC4899',
-    description: 'High-quality text reasoning. Best for complex writing, analysis, and deep research.',
-    size: '2.5GB',
-    sizeBytes: 2_497_000_000,
-    modelSrc: QWEN3_4B_INST_Q4_K_M.src,
-    supports: ['text'],
-  },
-  {
-    id: 'medpsy-1.7b',
-    name: 'MedPsy-1.7B',
-    modelType: 'text',
-    badge: 'Health Specialist',
-    badgeColor: '#EF4444',
-    description: "qvac's purpose-built health & nutrition AI.",
+    description: 'Default health & nutrition AI. Fast responses, medical knowledge, low RAM. Best for Quick Chat, Scribe, Voice, and Deep.',
     size: '2.4GB',
     sizeBytes: 2_564_052_800,
     modelSrc: MEDGEMMA_4B_IT_Q4_1.src,
@@ -86,11 +36,11 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   },
   {
     id: 'medpsy-4b',
-    name: 'MedPsy-4B',
+    name: 'MedPsy · Quality',
     modelType: 'text',
-    badge: 'Medical Grade',
+    badge: 'High Quality',
     badgeColor: '#EF4444',
-    description: "qvac's premium health model. Highest accuracy for medical and nutrition analysis.",
+    description: 'Premium health model. Highest accuracy for complex medical and nutrition analysis. Requires more storage.',
     size: '4.1GB',
     sizeBytes: 4_130_402_880,
     modelSrc: MEDGEMMA_4B_IT_Q8_0.src,
@@ -101,7 +51,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     id: 'smolvlm2-500m-q8',
     name: 'SmolVLM2-500M Lite',
     modelType: 'vision',
-    badge: 'Low-End Friendly',
+    badge: 'Fastest Vision',
     badgeColor: '#3B82F6',
     description: 'Smallest vision model. Ideal for older phones or limited storage. Loads instantly.',
     size: '546MB',
@@ -216,6 +166,19 @@ export function getHfDownloadUrl(modelSrc: string): string {
   }
   return modelSrc;
 }
+
+// Health-aware system prompts per module
+export const SYSTEM_PROMPTS = {
+  chat: `You are Peek Health, a private health and nutrition AI assistant running fully on-device. You specialise in nutrition, food science, medical information, and general wellness. Answer clearly and concisely. For health decisions, always remind the user to consult a qualified professional.`,
+
+  scribe: `You are Peek Health, a private health writing assistant running fully on-device. Help users draft, edit, and refine health-related documents, meal plans, notes, and research summaries. Format output in clear markdown with headers and bullet points where helpful.`,
+
+  deep: `You are Peek Deep, a private research assistant running fully on-device. The user has loaded a local document for analysis. Answer questions strictly based on the provided context. If the answer isn't in the context, say so clearly. Never fabricate information. Format responses in markdown.`,
+
+  voice: `You are a health-focused AI summariser. Summarise the following transcript in 3–5 concise bullet points, highlighting any key health, nutrition, or medical information. Format as markdown bullet points.`,
+
+  quickchat: `You are Peek Health, a fast private health and nutrition AI running fully on-device. You specialise in food, nutrition, medical information, and wellness. Keep answers concise and practical. For medical decisions, remind the user to consult a professional.`,
+};
 
 export const DEFAULT_PROMPTS: Record<string, string> = {
   food: `You are a professional nutritionist and food scientist with deep knowledge of global cuisine. Analyze the food visible in this image carefully.

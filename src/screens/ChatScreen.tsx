@@ -16,9 +16,10 @@ import {
   getConversations, saveConversation, getMessages,
   appendMessage, updateLastMessage, createConversationId,
 } from '../utils/storage';
-import { isTextModel } from '../utils/models';
+import { isTextModel, SYSTEM_PROMPTS } from '../utils/models';
 import { DownloadedModel, Conversation, ChatMessage } from '../types';
 import MarkdownText from '../components/MarkdownText';
+import CopyButton from '../components/CopyButton';
 
 interface Message {
   id: string;
@@ -28,8 +29,8 @@ interface Message {
   streaming?: boolean;
 }
 
-const SYSTEM_CHAT = `You are Peek, a private personal AI assistant running entirely on the user's device — no internet, no cloud. Help with any question. Be concise, accurate, and friendly.`;
-const SYSTEM_DOC = `You are Peek Scribe, an on-device AI writing assistant. Help draft, edit, and improve text. Keep responses focused on writing quality — structure, tone, word choice, continuations.`;
+const SYSTEM_CHAT = SYSTEM_PROMPTS.chat;
+const SYSTEM_DOC = SYSTEM_PROMPTS.scribe;
 
 const MODULE_ID = 'scribe';
 
@@ -331,15 +332,22 @@ function MessageBubble({ msg, theme }: { msg: Message; theme: any }) {
   return (
     <View style={[styles.bubbleRow, isUser && styles.bubbleRowUser]}>
       {!isUser ? (
-        <View style={[styles.aiBubble, { backgroundColor: theme.card }]}>
-          {msg.imagePath && <Image source={{ uri: msg.imagePath }} style={styles.bubbleImage} />}
-          {msg.streaming ? (
-            <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}▍</Text>
-          ) : (
-            <MarkdownText color={theme.text} fontSize={15} lineHeight={22}>
-              {msg.text}
-            </MarkdownText>
-          )}
+        <View style={styles.aiBubbleWrap}>
+          <View style={[styles.aiBubble, { backgroundColor: theme.card }]}>
+            {msg.imagePath && <Image source={{ uri: msg.imagePath }} style={styles.bubbleImage} />}
+            {msg.streaming ? (
+              <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}▍</Text>
+            ) : (
+              <MarkdownText color={theme.text} fontSize={15} lineHeight={22}>
+                {msg.text}
+              </MarkdownText>
+            )}
+          </View>
+          {!msg.streaming && msg.text ? (
+            <View style={styles.bubbleActions}>
+              <CopyButton text={msg.text} color={theme.textSecondary} size={11} />
+            </View>
+          ) : null}
         </View>
       ) : (
         <View style={[styles.userBubble, { backgroundColor: theme.accent }]}>
@@ -428,7 +436,9 @@ const styles = StyleSheet.create({
   msgListContent: { padding: 16, gap: 10, paddingBottom: 24 },
   bubbleRow: { flexDirection: 'row', marginBottom: 4 },
   bubbleRowUser: { justifyContent: 'flex-end' },
-  aiBubble: { maxWidth: '84%', borderRadius: 18, borderTopLeftRadius: 4, padding: 14, gap: 6 },
+  aiBubbleWrap: { maxWidth: '84%', gap: 4 },
+  aiBubble: { borderRadius: 18, borderTopLeftRadius: 4, padding: 14, gap: 6 },
+  bubbleActions: { flexDirection: 'row', paddingHorizontal: 4 },
   userBubble: { maxWidth: '84%', borderRadius: 18, borderTopRightRadius: 4, padding: 14 },
   bubbleImage: { width: 180, height: 120, borderRadius: 10 },
   bubbleText: { fontSize: 15, lineHeight: 22 },

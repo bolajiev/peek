@@ -34,30 +34,30 @@ interface Module {
 const MODULES: Module[] = [
   {
     id: 'Lens', screen: 'Lens', label: 'Vision Models', title: 'Peek Lens',
-    desc: 'Analyze images with your camera',
+    desc: 'Scan food, labels & images — instant health insights',
     icon: (c) => <IconLens size={20} color={c} />,
     filterFn: isVisionModel,
   },
   {
     id: 'Voice', screen: 'Voice', label: 'Whisper · Built-in', title: 'Peek Voice',
-    desc: 'Transcribe and summarize audio',
+    desc: 'Record or upload audio — transcribe & summarize',
     icon: (c) => <IconVoice size={20} color={c} />,
     skipPicker: true,
   },
   {
-    id: 'Scribe', screen: 'Scribe', label: 'Text Models', title: 'Peek Scribe',
-    desc: 'Write and edit with on-device AI',
+    id: 'Scribe', screen: 'Scribe', label: 'MedPsy Health AI', title: 'Peek Scribe',
+    desc: 'Draft meal plans, health notes, and more',
     icon: (c) => <IconScribe size={20} color={c} />,
     filterFn: isTextModel,
   },
   {
-    id: 'Deep', screen: 'Deep', label: 'Text Models', title: 'Peek Deep',
-    desc: 'Research your files privately',
+    id: 'Deep', screen: 'Deep', label: 'MedPsy Health AI', title: 'Peek Deep',
+    desc: 'Research health documents privately on-device',
     icon: (c) => <IconDeep size={20} color={c} />,
     filterFn: isTextModel,
   },
   {
-    id: 'Relay', screen: 'Relay', label: 'P2P · Beta', title: 'Peek Relay',
+    id: 'Relay', screen: 'Relay', label: 'P2P · Coming Soon', title: 'Peek Relay',
     desc: 'Offload heavy tasks to a nearby device',
     icon: (c) => <IconRelay size={20} color={c} />,
     fullWidth: true, skipPicker: true,
@@ -255,8 +255,8 @@ export default function HomeScreen() {
       >
         <View style={[styles.fabPulse, { backgroundColor: theme.accent, shadowColor: theme.accent }]} />
         <View>
-          <Text style={[styles.fabLabel, { color: theme.text }]}>Quick Chat</Text>
-          <Text style={[styles.fabSub, { color: theme.textSecondary }]}>Smallest model</Text>
+          <Text style={[styles.fabLabel, { color: theme.text }]}>Ask Health AI</Text>
+          <Text style={[styles.fabSub, { color: theme.textSecondary }]}>MedPsy · on-device</Text>
         </View>
       </Animated.View>
 
