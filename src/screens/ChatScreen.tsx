@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
+import { File } from 'expo-file-system';
 import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
@@ -38,6 +39,9 @@ export default function ChatScreen() {
   const preselectedModelId: string | undefined = route.params?.modelId;
   const resumeConvId: string | undefined = route.params?.conversationId;
   const mode: 'chat' | 'document' = route.params?.mode ?? 'chat';
+  const seedQuery: string | undefined = route.params?.seedQuery;
+  const seedAnswer: string | undefined = route.params?.seedAnswer;
+  const seedImage: string | undefined = route.params?.seedImage;
   const SYSTEM_PROMPT = mode === 'document' ? SYSTEM_DOC : SYSTEM_CHAT;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
@@ -59,7 +63,15 @@ export default function ChatScreen() {
 
   useEffect(() => {
     loadOnMount();
-    if (resumeConvId) rehydrateConversation(resumeConvId);
+    if (resumeConvId) {
+      rehydrateConversation(resumeConvId);
+    } else if (seedQuery || seedAnswer) {
+      // Seed from a scan result — pre-populate with Q+A so user can ask follow-ups
+      const seeded: Message[] = [];
+      if (seedQuery) seeded.push({ id: 'seed-q', role: 'user', text: seedQuery, imagePath: seedImage });
+      if (seedAnswer) seeded.push({ id: 'seed-a', role: 'assistant', text: seedAnswer });
+      setMessages(seeded);
+    }
     return () => {
       if (currentRunRef.current) {
         void cancel({ requestId: currentRunRef.current.requestId }).catch(() => {});
@@ -189,9 +201,33 @@ export default function ChatScreen() {
   };
 
   const handleAttach = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      setAttachedImage(result.assets[0].uri);
+    if (mode === 'document') {
+      // Document mode: pick a text file and send its content as a message
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/plain', 'text/markdown', 'application/json', 'text/csv', '*/*'],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      try {
+        const content = await new File(asset.uri).text();
+        if (content && content.trim().length > 0) {
+          const truncated = content.slice(0, 12000);
+          setInput(prev =>
+            prev
+              ? prev + `\n\n[Document: ${asset.name}]\n${truncated}`
+              : `[Document: ${asset.name}]\n${truncated}`
+          );
+        }
+      } catch {
+        setInput(prev => prev + `\n\n[Could not read ${asset.name}]`);
+      }
+    } else {
+      // Chat mode: attach an image
+      const result = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setAttachedImage(result.assets[0].uri);
+      }
     }
   };
 
@@ -256,7 +292,7 @@ export default function ChatScreen() {
           )}
           <View style={[styles.inputBar, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
             <TouchableOpacity style={styles.attachBtn} onPress={handleAttach} activeOpacity={0.7}>
-              <Text style={[styles.attachIcon, { color: theme.textSecondary }]}>+</Text>
+              <Text style={[styles.attachIcon, { color: theme.textSecondary }]}>{mode === 'document' ? '📄' : '+'}</Text>
             </TouchableOpacity>
             <TextInput
               style={[styles.textInput, { color: theme.text }]}

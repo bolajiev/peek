@@ -11,6 +11,7 @@ import { loadModel, unloadModel, completion, cancel, InferenceCancelledError } f
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { getSettings, getDownloadedModels, getDefaultModelId, addHistoryItem, updateScanStreak, toPath } from '../utils/storage';
+import { isVisionModel } from '../utils/models';
 import { logInference } from '../utils/auditLogger';
 import { ModelInfo } from '../types';
 
@@ -110,6 +111,7 @@ export default function ScanScreen() {
       if (!modelInfo) {
         setIsAnalyzing(false);
         setPreviewUri(null);
+        navigation.navigate('Models', { autoLaunch: { screen: 'Lens', label: 'Peek Lens' } });
         return;
       }
 
@@ -342,10 +344,13 @@ function ActivityDots({ color }: { color: string }) {
 
 async function findModel(preselectedId?: string): Promise<ModelInfo | null> {
   const downloaded = await getDownloadedModels();
-  if (downloaded.length === 0) return null;
-  if (preselectedId) return downloaded.find(m => m.id === preselectedId) ?? downloaded[0] ?? null;
+  // Lens requires a vision model (needs projection/mmproj file)
+  const visionModels = downloaded.filter(isVisionModel);
+  const pool = visionModels.length > 0 ? visionModels : downloaded;
+  if (pool.length === 0) return null;
+  if (preselectedId) return pool.find(m => m.id === preselectedId) ?? pool[0];
   const defaultId = await getDefaultModelId();
-  return (defaultId ? downloaded.find((m) => m.id === defaultId) : null) ?? downloaded[0] ?? null;
+  return (defaultId ? pool.find(m => m.id === defaultId) : null) ?? pool[0];
 }
 
 const styles = StyleSheet.create({

@@ -36,9 +36,12 @@ export default function ResultScreen() {
   }, []);
 
   const continueInChat = () => {
-    navigation.navigate('Main', {
-      screen: 'Chat',
-      params: { prefillMessage: params.text ? `Here's what I found: "${params.query}"` : undefined },
+    // Seed ScribeChat with the scan result so the user can ask follow-up questions
+    navigation.navigate('ScribeChat', {
+      mode: 'chat',
+      seedQuery: params.query,
+      seedAnswer: params.text,
+      seedImage: params.imagePath,
     });
   };
 
