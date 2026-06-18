@@ -97,8 +97,9 @@ export default function ChatScreen() {
     try {
       const synced = await syncModelsFromDisk();
       const defaultId = await getDefaultModelId();
-      const preferredId = preselectedModelId ?? defaultId ?? MODEL_KEYS.TEXT_FAST;
+      const preferredId = preselectedModelId ?? defaultId ?? MODEL_KEYS.TEXT_HEALTH;
       const model = synced.find(m => m.id === preferredId)
+        ?? synced.find(m => m.id === MODEL_KEYS.TEXT_HEALTH)
         ?? synced.find(m => m.id === MODEL_KEYS.TEXT_FAST)
         ?? synced.find(m => m.modelType === 'text')
         ?? synced[0];
@@ -279,7 +280,7 @@ export default function ChatScreen() {
       >
         {noModel ? (
           <NoModelState theme={theme} error={loadError}
-            onGoModels={() => navigation.navigate('Download', { modelId: 'text-fast', returnTo: 'Scribe', returnParams: {} })}
+            onGoModels={() => navigation.navigate('Download', { modelId: MODEL_KEYS.TEXT_HEALTH, returnTo: 'Scribe', returnParams: {} })}
             onRetry={() => { setNoModel(false); setLoadError(null); loadOnMount(); }} />
         ) : messages.length === 0 ? (
           <EmptyState theme={theme} mode={mode} />

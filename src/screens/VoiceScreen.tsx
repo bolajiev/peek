@@ -142,15 +142,17 @@ export default function VoiceScreen() {
     try {
       // Always use text-fast; download if missing
       const synced = await syncModelsFromDisk();
-      const fastModel = synced.find(m => m.id === MODEL_KEYS.TEXT_FAST);
+      const fastModel = synced.find(m => m.id === MODEL_KEYS.TEXT_HEALTH)
+        ?? synced.find(m => m.id === MODEL_KEYS.TEXT_FAST)
+        ?? synced.find(m => m.modelType === 'text');
       if (!fastModel) {
         setPhase('transcript');
         Alert.alert(
           'Model needed',
-          'Download Qwen3 1.7B · Fast to summarize.',
+          'Download MedPsy · Health AI to summarize.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Download', onPress: () => navigation.navigate('Download', { modelId: MODEL_KEYS.TEXT_FAST, returnTo: 'Voice', returnParams: {} }) },
+            { text: 'Download', onPress: () => navigation.navigate('Download', { modelId: MODEL_KEYS.TEXT_HEALTH, returnTo: 'Voice', returnParams: {} }) },
           ],
         );
         return;
