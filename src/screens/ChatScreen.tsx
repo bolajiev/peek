@@ -14,7 +14,7 @@ import { useTheme } from '../navigation/AppNavigator';
 import {
   syncModelsFromDisk, getSettings, getDefaultModelId,
   getConversations, saveConversation, getMessages,
-  appendMessage, updateLastMessage, createConversationId,
+  appendMessage, updateLastMessage, createConversationId, toPath,
 } from '../utils/storage';
 import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
 import { DownloadedModel, Conversation, ChatMessage } from '../types';
@@ -107,7 +107,7 @@ export default function ChatScreen() {
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
       const modelConfig: any = { ctx_size: 4096, device };
-      if (model.projectionModelSrc) modelConfig.projectionModelSrc = model.projectionModelSrc;
+      if (model.projectionModelSrc) modelConfig.projectionModelSrc = toPath(model.projectionModelSrc);
       const mid = await llmManager.ensure(model, modelConfig, setLoadProgress);
       modelIdRef.current = mid;
     } catch (err: any) {

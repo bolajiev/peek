@@ -43,7 +43,11 @@ function getInternalModelsDir(): Directory {
 export async function initModelsDirectory(): Promise<void> {
   const dir = getModelsDir();
   dir.create({ intermediates: true, idempotent: true });
-  await migrateOldModelFolders();
+  try {
+    await migrateOldModelFolders();
+  } catch (e) {
+    console.warn('[storage] migration skipped:', e);
+  }
 }
 
 // Maps old model folder names (pre-v4) to new canonical IDs.

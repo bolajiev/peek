@@ -8,7 +8,7 @@ import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { syncModelsFromDisk, getSettings, getDefaultModelId } from '../utils/storage';
+import { syncModelsFromDisk, getSettings, getDefaultModelId, toPath } from '../utils/storage';
 import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
 import { IconBack, IconSend } from '../components/Icons';
 import MarkdownText from '../components/MarkdownText';
@@ -63,7 +63,7 @@ export default function QuickChatScreen() {
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
       const modelConfig: any = { ctx_size: 2048, device };
-      if (model.projectionModelSrc) modelConfig.projectionModelSrc = model.projectionModelSrc;
+      if (model.projectionModelSrc) modelConfig.projectionModelSrc = toPath(model.projectionModelSrc);
       const mid = await llmManager.ensure(model, modelConfig, setLoadProgress);
       modelIdRef.current = mid;
     } catch (err: any) {

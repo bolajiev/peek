@@ -10,7 +10,7 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { loadModel, unloadModel, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getSettings, getDownloadedModels, getDefaultModelId, addHistoryItem, updateScanStreak, toPath } from '../utils/storage';
+import { getSettings, syncModelsFromDisk, getDefaultModelId, addHistoryItem, updateScanStreak, toPath } from '../utils/storage';
 import { isVisionModel } from '../utils/models';
 import { logInference } from '../utils/auditLogger';
 import { ModelInfo } from '../types';
@@ -305,7 +305,7 @@ function ActivityDots({ color }: { color: string }) {
 }
 
 async function findModel(preselectedId?: string): Promise<ModelInfo | null> {
-  const downloaded = await getDownloadedModels();
+  const downloaded = await syncModelsFromDisk();
   // Lens requires a vision model (needs projection/mmproj file)
   const visionModels = downloaded.filter(isVisionModel);
   const pool = visionModels.length > 0 ? visionModels : downloaded;

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated, Image } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
@@ -10,6 +10,19 @@ export default function SplashScreen() {
   const theme = getTheme(useTheme());
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(16)).current;
+  const [bootError, setBootError] = useState<string | null>(null);
+
+  const boot = async () => {
+    try {
+      await initModelsDirectory();
+      await syncModelsFromDisk();
+      const onboarded = await hasOnboarded();
+      navigation.replace(onboarded ? 'Main' : 'Onboarding');
+    } catch (e: any) {
+      console.error('[boot] init failed:', e);
+      setBootError(e?.message || 'Startup error. Tap Retry to try again.');
+    }
+  };
 
   useEffect(() => {
     Animated.parallel([
@@ -17,21 +30,24 @@ export default function SplashScreen() {
       Animated.timing(slideAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
     ]).start();
 
-    const timer = setTimeout(async () => {
-      await initModelsDirectory();
-      await syncModelsFromDisk();
-
-      const onboarded = await hasOnboarded();
-      if (!onboarded) {
-        navigation.replace('Onboarding');
-        return;
-      }
-
-      navigation.replace('Main');
-    }, 1800);
-
+    const timer = setTimeout(boot, 1800);
     return () => clearTimeout(timer);
   }, []);
+
+  if (bootError) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <Text style={[styles.errorTitle, { color: theme.text }]}>Startup Failed</Text>
+        <Text selectable style={[styles.errorMsg, { color: theme.textSecondary }]}>{bootError}</Text>
+        <TouchableOpacity
+          style={[styles.retryBtn, { backgroundColor: theme.accent }]}
+          onPress={() => { setBootError(null); boot(); }}
+        >
+          <Text style={[styles.retryText, { color: theme.accentFg }]}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -49,10 +65,32 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 36,
   },
   logo: {
     width: 120,
     height: 120,
     borderRadius: 30,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  errorMsg: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  retryBtn: {
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  retryText: {
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

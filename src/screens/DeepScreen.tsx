@@ -10,7 +10,7 @@ import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext } from '../utils/ragService';
 import { syncModelsFromDisk, getSettings, getDefaultModelId } from '../utils/storage';
-import { completion, cancel, loadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
+import { completion, cancel, loadModel, unloadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
 import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
 import MarkdownText from '../components/MarkdownText';
@@ -47,7 +47,13 @@ export default function DeepScreen() {
     const sub = Keyboard.addListener('keyboardDidShow', () => {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     });
-    return () => sub.remove();
+    return () => {
+      sub.remove();
+      if (embedIdRef.current) {
+        unloadModel({ modelId: embedIdRef.current }).catch(() => {});
+        embedIdRef.current = '';
+      }
+    };
   }, []);
 
   const loadLlm = async () => {
@@ -200,8 +206,8 @@ export default function DeepScreen() {
               <Text style={[styles.actionBtnText, { color: theme.accentFg }]}>Retry</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border }]} onPress={() => navigation.navigate('Models')}>
-            <Text style={[styles.actionBtnText, { color: theme.text }]}>Manage Models</Text>
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border }]} onPress={() => navigation.navigate('Download', { modelId: MODEL_KEYS.TEXT_FAST, returnTo: 'Deep', returnParams: {} })}>
+            <Text style={[styles.actionBtnText, { color: theme.text }]}>Download Model</Text>
           </TouchableOpacity>
         </View>
       ) : phase === 'idle' ? (
