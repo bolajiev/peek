@@ -10,26 +10,33 @@ import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getDownloadedModels, getDefaultModelId, getSettings } from '../utils/storage';
-import { ragQuery, buildRagContext } from '../utils/ragService';
-import { DownloadedModel } from '../types';
+import {
+  getDownloadedModels, getSettings,
+  getConversations, saveConversation, getMessages,
+  appendMessage, updateLastMessage, createConversationId,
+} from '../utils/storage';
+import { isTextModel } from '../utils/models';
+import { DownloadedModel, Conversation, ChatMessage } from '../types';
+import MarkdownText from '../components/MarkdownText';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   text: string;
   imagePath?: string;
-  ragUsed?: boolean;
   streaming?: boolean;
 }
 
-const SYSTEM_CHAT = `You are Peek, a private personal AI assistant. You run entirely on the user's device — no internet, no cloud. Help the user with any question they have. Be concise, accurate, and friendly. If you have context from the user's personal knowledge base, use it naturally.`;
-const SYSTEM_DOC = `You are Peek Scribe, an on-device AI writing assistant. Help the user draft, edit, and improve text. Keep responses focused on writing quality — suggest structure, tone, word choice, and continuations as needed.`;
+const SYSTEM_CHAT = `You are Peek, a private personal AI assistant running entirely on the user's device — no internet, no cloud. Help with any question. Be concise, accurate, and friendly.`;
+const SYSTEM_DOC = `You are Peek Scribe, an on-device AI writing assistant. Help draft, edit, and improve text. Keep responses focused on writing quality — structure, tone, word choice, continuations.`;
+
+const MODULE_ID = 'scribe';
 
 export default function ChatScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const preselectedModelId: string | undefined = route.params?.modelId;
+  const resumeConvId: string | undefined = route.params?.conversationId;
   const mode: 'chat' | 'document' = route.params?.mode ?? 'chat';
   const SYSTEM_PROMPT = mode === 'document' ? SYSTEM_DOC : SYSTEM_CHAT;
   const themeMode = useTheme();
@@ -48,25 +55,34 @@ export default function ChatScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const currentRunRef = useRef<any>(null);
   const modelIdRef = useRef<string | null>(null);
+  const convIdRef = useRef<string>(resumeConvId ?? createConversationId());
 
   useEffect(() => {
     loadOnMount();
+    if (resumeConvId) rehydrateConversation(resumeConvId);
     return () => {
       if (currentRunRef.current) {
         void cancel({ requestId: currentRunRef.current.requestId }).catch(() => {});
       }
-      // Don't unload — llmManager keeps model hot for next screen
     };
   }, []);
+
+  const rehydrateConversation = async (convId: string) => {
+    const stored = await getMessages(convId);
+    if (stored.length > 0) {
+      setMessages(stored.map(m => ({ id: m.id, role: m.role, text: m.content, imagePath: m.imagePath })));
+    }
+  };
 
   const loadOnMount = async () => {
     setModelLoading(true);
     setLoadProgress(0);
     try {
-      const models = await getDownloadedModels();
+      const all = await getDownloadedModels();
+      const textModels = all.filter(isTextModel);
+      const models = textModels.length > 0 ? textModels : all;
       if (models.length === 0) { setNoModel(true); setModelLoading(false); return; }
-      const defaultId = preselectedModelId ?? await getDefaultModelId();
-      const model = (defaultId ? models.find((m) => m.id === defaultId) : null) ?? models[0];
+      const model = (preselectedModelId ? models.find(m => m.id === preselectedModelId) : null) ?? models[0];
       setModelName(model.name);
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
@@ -76,12 +92,32 @@ export default function ChatScreen() {
       modelIdRef.current = mid;
     } catch (err: any) {
       const raw = err?.message || err?.toString() || 'Unknown error';
-      const msg = raw.replace(/file:\/\/[^\s,]*/g, '[model]');
-      setLoadError(msg);
+      setLoadError(raw.replace(/file:\/\/[^\s,]*/g, '[model]'));
       setNoModel(true);
     } finally {
       setModelLoading(false);
     }
+  };
+
+  const persistMessage = async (msg: Message) => {
+    const convId = convIdRef.current;
+    const cm: ChatMessage = {
+      id: msg.id,
+      conversationId: convId,
+      role: msg.role,
+      content: msg.text,
+      imagePath: msg.imagePath,
+      createdAt: new Date().toISOString(),
+    };
+    await appendMessage(cm);
+    const conv: Conversation = {
+      id: convId,
+      moduleId: MODULE_ID,
+      title: msg.role === 'user' && msg.text ? msg.text.slice(0, 60) : 'Chat',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await saveConversation(conv);
   };
 
   const handleSend = async () => {
@@ -91,50 +127,30 @@ export default function ChatScreen() {
     const imgPath = attachedImage;
     setAttachedImage(null);
 
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      text,
-      imagePath: imgPath ?? undefined,
-    };
-    setMessages((prev) => [...prev, userMsg]);
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', text, imagePath: imgPath ?? undefined };
+    const allMsgs = [...messages, userMsg];
+    setMessages(allMsgs);
+    persistMessage(userMsg);
     setIsTyping(true);
-
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
 
     const mid = modelIdRef.current;
     if (!mid) {
       setIsTyping(false);
-      setMessages((prev) => [...prev, { id: 'err-' + Date.now(), role: 'assistant', text: 'Model not ready yet. Wait a moment.' }]);
       return;
     }
 
-    // RAG search
-    let ragContext = '';
-    let ragUsed = false;
-    if (text) {
-      try {
-        const docs = await ragQuery(mid, text, 3);
-        if (docs.length > 0) { ragContext = buildRagContext(docs); ragUsed = true; }
-      } catch {}
-    }
-
     const history: any[] = [
-      { role: 'system', content: SYSTEM_PROMPT + ragContext },
-      ...messages.slice(-10).map((m) => ({
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...allMsgs.slice(-20).map(m => ({
         role: m.role,
         content: m.text,
         ...(m.imagePath ? { attachments: [{ path: m.imagePath }] } : {}),
       })),
-      {
-        role: 'user',
-        content: text || 'Analyze this image.',
-        ...(imgPath ? { attachments: [{ path: imgPath }] } : {}),
-      },
     ];
 
     const placeholderId = 'ai-' + Date.now();
-    setMessages((prev) => [...prev, { id: placeholderId, role: 'assistant', text: '', ragUsed, streaming: true }]);
+    setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', text: '', streaming: true }]);
 
     try {
       const run = completion({ modelId: mid, history, stream: true });
@@ -143,20 +159,32 @@ export default function ChatScreen() {
       for await (const event of run.events) {
         if (event.type === 'contentDelta') {
           streamed += event.text;
-          setMessages((prev) => prev.map((m) => m.id === placeholderId ? { ...m, text: streamed } : m));
+          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: streamed } : m));
           scrollRef.current?.scrollToEnd({ animated: false });
         }
       }
       await run.final;
       currentRunRef.current = null;
-      setMessages((prev) => prev.map((m) => m.id === placeholderId ? { ...m, streaming: false } : m));
+      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, streaming: false } : m));
+      const aiMsg: Message = { id: placeholderId, role: 'assistant', text: streamed };
+      persistMessage(aiMsg);
+      await updateLastMessage(convIdRef.current, streamed);
     } catch (err) {
       currentRunRef.current = null;
       if (!(err instanceof InferenceCancelledError)) {
-        setMessages((prev) => prev.map((m) => m.id === placeholderId ? { ...m, text: 'Something went wrong. Try again.', streaming: false } : m));
+        setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: 'Something went wrong. Try again.', streaming: false } : m));
+      } else {
+        setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, streaming: false } : m));
       }
     } finally {
       setIsTyping(false);
+    }
+  };
+
+  const handleStop = () => {
+    if (currentRunRef.current) {
+      void cancel({ requestId: currentRunRef.current.requestId }).catch(() => {});
+      currentRunRef.current = null;
     }
   };
 
@@ -167,6 +195,11 @@ export default function ChatScreen() {
     }
   };
 
+  const handleNewConversation = () => {
+    convIdRef.current = createConversationId();
+    setMessages([]);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
@@ -174,49 +207,42 @@ export default function ChatScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.menuBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <Text style={[styles.backBtn, { color: theme.text }]}>←</Text>
         </TouchableOpacity>
-
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, { color: theme.text }]}>{mode === 'document' ? 'Document' : 'Scribe'}</Text>
           <Text style={[styles.headerSub, { color: modelLoading ? theme.accent : theme.textSecondary }]} numberOfLines={1}>
             {modelLoading ? `Loading${loadProgress > 0 ? ` ${Math.round(loadProgress)}%` : '...'}` : modelName}
           </Text>
         </View>
-
         <View style={styles.headerRight}>
           {messages.length > 0 && (
-            <TouchableOpacity onPress={() => setMessages([])} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={[styles.clearText, { color: theme.textSecondary }]}>Clear</Text>
+            <TouchableOpacity onPress={handleNewConversation} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.clearText, { color: theme.textSecondary }]}>New</Text>
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {/* Progress bar */}
       {modelLoading && (
         <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
           <View style={[styles.progressFill, { backgroundColor: theme.accent, width: `${loadProgress || 8}%` }]} />
         </View>
       )}
 
-      {/* Body */}
       {noModel ? (
-        <NoModelState theme={theme} error={loadError} onGoModels={() => navigation.navigate('Models')} onRetry={() => { setNoModel(false); setLoadError(null); loadOnMount(); }} />
+        <NoModelState theme={theme} error={loadError}
+          onGoModels={() => navigation.navigate('Models', { autoLaunch: { screen: 'Scribe', label: 'Peek Scribe' } })}
+          onRetry={() => { setNoModel(false); setLoadError(null); loadOnMount(); }} />
       ) : messages.length === 0 ? (
         <EmptyState theme={theme} mode={mode} />
       ) : (
-        <ScrollView
-          ref={scrollRef}
-          style={styles.msgList}
-          contentContainerStyle={styles.msgListContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {messages.map((msg) => <MessageBubble key={msg.id} msg={msg} theme={theme} />)}
+        <ScrollView ref={scrollRef} style={styles.msgList} contentContainerStyle={styles.msgListContent}
+          keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          {messages.map(msg => <MessageBubble key={msg.id} msg={msg} theme={theme} />)}
           {isTyping && messages[messages.length - 1]?.role !== 'assistant' && <TypingIndicator theme={theme} />}
+          <View style={{ height: 8 }} />
         </ScrollView>
       )}
 
-      {/* Input bar */}
       {!noModel && (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           {attachedImage && (
@@ -241,16 +267,22 @@ export default function ChatScreen() {
               multiline
               maxLength={2000}
               returnKeyType="default"
-              editable={!modelLoading}
+              editable={!modelLoading && !isTyping}
             />
-            <TouchableOpacity
-              style={[styles.sendBtn, { backgroundColor: (input.trim() || attachedImage) && !modelLoading ? theme.accent : theme.border }]}
-              onPress={handleSend}
-              disabled={(!input.trim() && !attachedImage) || isTyping || modelLoading}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.sendIcon, { color: (input.trim() || attachedImage) ? theme.accentFg : theme.textSecondary }]}>↑</Text>
-            </TouchableOpacity>
+            {isTyping ? (
+              <TouchableOpacity style={[styles.sendBtn, { backgroundColor: theme.error }]} onPress={handleStop}>
+                <View style={[styles.stopSquare, { backgroundColor: '#fff' }]} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.sendBtn, { backgroundColor: (input.trim() || attachedImage) && !modelLoading ? theme.accent : theme.border }]}
+                onPress={handleSend}
+                disabled={(!input.trim() && !attachedImage) || modelLoading}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.sendIcon, { color: (input.trim() || attachedImage) ? theme.accentFg : theme.textSecondary }]}>↑</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </KeyboardAvoidingView>
       )}
@@ -259,39 +291,27 @@ export default function ChatScreen() {
 }
 
 function MessageBubble({ msg, theme }: { msg: Message; theme: any }) {
-  const slideAnim = useRef(new Animated.Value(20)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 280, useNativeDriver: true }),
-      Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, friction: 9, tension: 120 }),
-    ]).start();
-  }, []);
-
   const isUser = msg.role === 'user';
-
   return (
-    <Animated.View style={[styles.bubbleRow, isUser && styles.bubbleRowUser, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-      {!isUser && (
+    <View style={[styles.bubbleRow, isUser && styles.bubbleRowUser]}>
+      {!isUser ? (
         <View style={[styles.aiBubble, { backgroundColor: theme.card }]}>
-          {msg.ragUsed && (
-            <View style={[styles.ragBadge, { backgroundColor: theme.accent + '22' }]}>
-              <View style={[styles.ragDot, { backgroundColor: theme.accent }]} />
-              <Text style={[styles.ragText, { color: theme.accent }]}>From memory</Text>
-            </View>
-          )}
           {msg.imagePath && <Image source={{ uri: msg.imagePath }} style={styles.bubbleImage} />}
-          <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}{msg.streaming ? '▍' : ''}</Text>
+          {msg.streaming ? (
+            <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}▍</Text>
+          ) : (
+            <MarkdownText color={theme.text} fontSize={15} lineHeight={22}>
+              {msg.text}
+            </MarkdownText>
+          )}
         </View>
-      )}
-      {isUser && (
+      ) : (
         <View style={[styles.userBubble, { backgroundColor: theme.accent }]}>
           {msg.imagePath && <Image source={{ uri: msg.imagePath }} style={styles.bubbleImage} />}
-          {msg.text ? <Text style={[styles.bubbleText, { color: theme.accentFg }]}>{msg.text}</Text> : null}
+          {msg.text ? <Text selectable style={[styles.bubbleText, { color: theme.accentFg }]}>{msg.text}</Text> : null}
         </View>
       )}
-    </Animated.View>
+    </View>
   );
 }
 
@@ -318,26 +338,16 @@ function TypingIndicator({ theme }: any) {
   );
 }
 
-function EmptyState({ theme, mode }: { theme: any; mode: 'chat' | 'document' }) {
-  const pulse = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    Animated.loop(Animated.sequence([
-      Animated.timing(pulse, { toValue: 1.05, duration: 1600, useNativeDriver: true }),
-      Animated.timing(pulse, { toValue: 1, duration: 1600, useNativeDriver: true }),
-    ])).start();
-  }, []);
-
+function EmptyState({ theme, mode }: { theme: any; mode: string }) {
   const chips = mode === 'document'
     ? ['Draft a paragraph', 'Improve this text', 'Continue my story', 'Write a summary']
-    : ['What is this?', 'Summarize this text', 'What are the calories?', 'Explain this to me'];
-
+    : ['Explain quantum computing', 'Write a cover letter', 'Summarize this idea', 'Help me brainstorm'];
   return (
     <View style={styles.emptyState}>
-      <Animated.Image source={require('../../peeklogo.png')} style={[styles.emptyLogo, { transform: [{ scale: pulse }] }]} resizeMode="contain" />
       <Text style={[styles.emptyTitle, { color: theme.text }]}>{mode === 'document' ? 'Start Writing' : 'Ask me anything'}</Text>
       <Text style={[styles.emptySub, { color: theme.textSecondary }]}>{mode === 'document' ? 'Describe what you want to write.' : 'Type a question or attach an image.'}</Text>
       <View style={styles.chipsRow}>
-        {chips.map((c) => (
+        {chips.map(c => (
           <View key={c} style={[styles.chip, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <Text style={[styles.chipText, { color: theme.textSecondary }]}>{c}</Text>
           </View>
@@ -350,17 +360,17 @@ function EmptyState({ theme, mode }: { theme: any; mode: 'chat' | 'document' }) 
 function NoModelState({ theme, error, onGoModels, onRetry }: any) {
   return (
     <View style={styles.emptyState}>
-      <Text style={[styles.emptyTitle, { color: theme.text }]}>{error ? 'Load Failed' : 'No model yet'}</Text>
+      <Text style={[styles.emptyTitle, { color: theme.text }]}>{error ? 'Load Failed' : 'No text model yet'}</Text>
       <Text selectable style={[styles.emptySub, { color: error ? theme.error : theme.textSecondary }]}>
-        {error ? error : 'Download an AI model to start chatting.'}
+        {error ?? 'Download a text model (Qwen3-1.7B Chat or similar) to start chatting.'}
       </Text>
-      {error ? (
+      {error && (
         <TouchableOpacity style={[styles.goModelBtn, { backgroundColor: theme.accent }]} onPress={onRetry}>
           <Text style={[styles.goModelText, { color: theme.accentFg }]}>Retry</Text>
         </TouchableOpacity>
-      ) : null}
+      )}
       <TouchableOpacity style={[styles.goModelBtn, { backgroundColor: error ? theme.card : theme.accent, borderWidth: error ? 1 : 0, borderColor: theme.border }]} onPress={onGoModels}>
-        <Text style={[styles.goModelText, { color: error ? theme.text : theme.accentFg }]}>Manage Models</Text>
+        <Text style={[styles.goModelText, { color: error ? theme.text : theme.accentFg }]}>Get Text Model</Text>
       </TouchableOpacity>
     </View>
   );
@@ -379,20 +389,16 @@ const styles = StyleSheet.create({
   headerRight: { width: 60, alignItems: 'flex-end' },
   clearText: { fontSize: 13, fontWeight: '600' },
   msgList: { flex: 1 },
-  msgListContent: { padding: 16, gap: 12, paddingBottom: 24 },
+  msgListContent: { padding: 16, gap: 10, paddingBottom: 24 },
   bubbleRow: { flexDirection: 'row', marginBottom: 4 },
   bubbleRowUser: { justifyContent: 'flex-end' },
-  aiBubble: { maxWidth: '82%', borderRadius: 18, borderTopLeftRadius: 4, padding: 14, gap: 8 },
-  userBubble: { maxWidth: '82%', borderRadius: 18, borderTopRightRadius: 4, padding: 14, gap: 8 },
-  ragBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start' },
-  ragDot: { width: 5, height: 5, borderRadius: 2.5 },
-  ragText: { fontSize: 11, fontWeight: '700' },
+  aiBubble: { maxWidth: '84%', borderRadius: 18, borderTopLeftRadius: 4, padding: 14, gap: 6 },
+  userBubble: { maxWidth: '84%', borderRadius: 18, borderTopRightRadius: 4, padding: 14 },
   bubbleImage: { width: 180, height: 120, borderRadius: 10 },
   bubbleText: { fontSize: 15, lineHeight: 22 },
   typingBubble: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 14, borderRadius: 18, borderTopLeftRadius: 4 },
   typingDot: { width: 7, height: 7, borderRadius: 3.5 },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 36, gap: 12 },
-  emptyLogo: { width: 90, height: 90, borderRadius: 22, marginBottom: 8 },
   emptyTitle: { fontSize: 26, fontWeight: '800', textAlign: 'center' },
   emptySub: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 8 },
@@ -410,4 +416,5 @@ const styles = StyleSheet.create({
   textInput: { flex: 1, fontSize: 16, maxHeight: 120, paddingTop: 8, paddingBottom: 8 },
   sendBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
   sendIcon: { fontSize: 18, fontWeight: '700' },
+  stopSquare: { width: 14, height: 14, borderRadius: 2 },
 });

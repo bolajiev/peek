@@ -1,4 +1,5 @@
 export type UseCase = 'scan' | 'chat';
+export type ModuleId = 'lens' | 'voice' | 'scribe' | 'deep' | 'quickchat';
 
 export interface ModelInfo {
   id: string;
@@ -10,10 +11,29 @@ export interface ModelInfo {
   sizeBytes: number;
   modelSrc: string;
   projectionModelSrc?: string;
+  modelType: 'vision' | 'text';
   supports: string[];
   isDownloaded?: boolean;
   downloadedPath?: string;
   isCustom?: boolean;
+}
+
+export interface Conversation {
+  id: string;
+  moduleId: ModuleId;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  modelId?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  imagePath?: string;
+  createdAt: string;
 }
 
 export interface DownloadedModel extends ModelInfo {

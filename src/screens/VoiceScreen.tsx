@@ -10,8 +10,10 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { getDownloadedModels, getSettings, toPath } from '../utils/storage';
+import { isTextModel } from '../utils/models';
 import { Paths, File, Directory } from 'expo-file-system';
 import { IconVoice, IconUpload, IconMic, IconBack } from '../components/Icons';
+import MarkdownText from '../components/MarkdownText';
 
 type Phase = 'idle' | 'recording' | 'transcribing' | 'transcript' | 'summarizing';
 
@@ -144,9 +146,11 @@ export default function VoiceScreen() {
     if (!transcript) return;
     setPhase('summarizing');
     try {
-      const models = await getDownloadedModels();
+      const all = await getDownloadedModels();
+      const textModels = all.filter(isTextModel);
+      const models = textModels.length > 0 ? textModels : all;
       if (!models.length) {
-        Alert.alert('No model', 'Download an LLM model from Models to use summarization.');
+        Alert.alert('No model', 'Download a text model from the Models screen to use summarization.');
         setPhase('transcript');
         return;
       }
@@ -301,7 +305,7 @@ export default function VoiceScreen() {
             <>
               <Text style={[styles.sectionHead, { color: theme.textSecondary, marginTop: 20 }]}>SUMMARY</Text>
               <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <Text selectable style={[styles.resultText, { color: theme.text }]}>{summary}</Text>
+                <MarkdownText color={theme.text} fontSize={15} lineHeight={23}>{summary}</MarkdownText>
               </View>
             </>
           ) : (

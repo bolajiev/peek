@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Paths, File, Directory } from 'expo-file-system';
-import { HistoryItem, InferenceLog, AppSettings, ThemeMode, Accelerator, ResponseLength, DownloadedModel } from '../types';
+import { HistoryItem, InferenceLog, AppSettings, ThemeMode, Accelerator, ResponseLength, DownloadedModel, Conversation, ChatMessage, ModuleId } from '../types';
 import { AVAILABLE_MODELS } from './models';
 
 // QVAC SDK expects bare filesystem paths, not file:// URIs.
@@ -294,5 +294,55 @@ export async function clearAllData(): Promise<void> {
   for (const key of keys) {
     await AsyncStorage.removeItem(key);
   }
+}
+
+// ── Conversation history (per-module, persisted) ─────────────────────────────
+
+function convListKey(moduleId: string) { return `@peek_convs_${moduleId}`; }
+function msgListKey(convId: string) { return `@peek_msgs_${convId}`; }
+
+export async function getConversations(moduleId: ModuleId): Promise<Conversation[]> {
+  try {
+    const data = await AsyncStorage.getItem(convListKey(moduleId));
+    return data ? JSON.parse(data) : [];
+  } catch { return []; }
+}
+
+export async function saveConversation(conv: Conversation): Promise<void> {
+  const list = await getConversations(conv.moduleId);
+  const idx = list.findIndex(c => c.id === conv.id);
+  if (idx >= 0) list[idx] = conv; else list.unshift(conv);
+  await AsyncStorage.setItem(convListKey(conv.moduleId), JSON.stringify(list));
+}
+
+export async function deleteConversation(moduleId: ModuleId, convId: string): Promise<void> {
+  const list = await getConversations(moduleId);
+  await AsyncStorage.setItem(convListKey(moduleId), JSON.stringify(list.filter(c => c.id !== convId)));
+  await AsyncStorage.removeItem(msgListKey(convId));
+}
+
+export async function getMessages(convId: string): Promise<ChatMessage[]> {
+  try {
+    const data = await AsyncStorage.getItem(msgListKey(convId));
+    return data ? JSON.parse(data) : [];
+  } catch { return []; }
+}
+
+export async function appendMessage(msg: ChatMessage): Promise<void> {
+  const msgs = await getMessages(msg.conversationId);
+  msgs.push(msg);
+  await AsyncStorage.setItem(msgListKey(msg.conversationId), JSON.stringify(msgs));
+}
+
+export async function updateLastMessage(convId: string, content: string): Promise<void> {
+  const msgs = await getMessages(convId);
+  if (msgs.length > 0) {
+    msgs[msgs.length - 1].content = content;
+    await AsyncStorage.setItem(msgListKey(convId), JSON.stringify(msgs));
+  }
+}
+
+export function createConversationId(): string {
+  return `conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 

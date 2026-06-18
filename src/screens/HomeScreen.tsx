@@ -11,6 +11,7 @@ import {
 } from '../components/Icons';
 import ModelPickerSheet from '../components/ModelPickerSheet';
 import { getDownloadedModels, getQuickChatDefaultId, setQuickChatDefaultId } from '../utils/storage';
+import { isVisionModel, isTextModel } from '../utils/models';
 import { DownloadedModel } from '../types';
 
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -30,15 +31,12 @@ interface Module {
   filterFn?: (m: DownloadedModel) => boolean;
 }
 
-// Lens needs a vision model (has projection/mmproj)
-const isVision = (m: DownloadedModel) => !!m.projectionModelSrc;
-
 const MODULES: Module[] = [
   {
     id: 'Lens', screen: 'Lens', label: 'Vision Models', title: 'Peek Lens',
     desc: 'Analyze images with your camera',
     icon: (c) => <IconLens size={20} color={c} />,
-    filterFn: isVision,
+    filterFn: isVisionModel,
   },
   {
     id: 'Voice', screen: 'Voice', label: 'Whisper · Built-in', title: 'Peek Voice',
@@ -47,14 +45,16 @@ const MODULES: Module[] = [
     skipPicker: true,
   },
   {
-    id: 'Scribe', screen: 'Scribe', label: 'Any Model', title: 'Peek Scribe',
+    id: 'Scribe', screen: 'Scribe', label: 'Text Models', title: 'Peek Scribe',
     desc: 'Write and edit with on-device AI',
     icon: (c) => <IconScribe size={20} color={c} />,
+    filterFn: isTextModel,
   },
   {
-    id: 'Deep', screen: 'Deep', label: 'Any Model', title: 'Peek Deep',
-    desc: 'Research any topic privately',
+    id: 'Deep', screen: 'Deep', label: 'Text Models', title: 'Peek Deep',
+    desc: 'Research your files privately',
     icon: (c) => <IconDeep size={20} color={c} />,
+    filterFn: isTextModel,
   },
   {
     id: 'Relay', screen: 'Relay', label: 'P2P · Beta', title: 'Peek Relay',
@@ -143,11 +143,13 @@ export default function HomeScreen() {
   const handleFabTap = async () => {
     const all = await getDownloadedModels();
     if (all.length === 0) {
-      navigation.navigate('Models');
+      navigation.navigate('Models', { autoLaunch: { screen: 'QuickChat', label: 'Quick Chat' } });
       return;
     }
-    // Sort by size — smallest first
-    const sorted = [...all].sort((a, b) => (a.sizeBytes || 0) - (b.sizeBytes || 0));
+    // Prefer text models; sort by size smallest first
+    const textModels = all.filter(isTextModel);
+    const pool = textModels.length > 0 ? textModels : all;
+    const sorted = [...pool].sort((a, b) => (a.sizeBytes || 0) - (b.sizeBytes || 0));
     const defaultId = await getQuickChatDefaultId();
     // If default is set and still downloaded, go straight in
     if (defaultId && sorted.find(m => m.id === defaultId)) {

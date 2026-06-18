@@ -17,130 +17,204 @@ import {
   MMPROJ_OCR_0_6B_MULTIMODAL_F16,
   GEMMA4_4B_MULTIMODAL_Q4_K_M,
   MMPROJ_GEMMA4_4B_MULTIMODAL_BF16,
+  QWEN3_600M_INST_Q4,
+  QWEN3_1_7B_INST_Q4,
+  QWEN3_4B_INST_Q4_K_M,
+  LLAMA_3_2_1B_INST_Q4_0,
 } from '@qvac/sdk';
 import { ModelInfo } from '../types';
 
-const ALL: string[] = ['food', 'plant', 'text', 'health', 'code', 'object'];
-
 export const AVAILABLE_MODELS: ModelInfo[] = [
+  // ── Text LLMs (Scribe, Deep, Quick Chat, Voice summary) ───────────────────
   {
-    id: 'medpsy-1.7b',
-    name: 'MedPsy-1.7B',
-    badge: 'Recommended',
-    badgeColor: '#00CC6A',
-    description: 'qvac\'s purpose-built health & nutrition AI. Best balance of speed and accuracy for everyday use.',
-    size: '2.4GB',
-    sizeBytes: 2564052800,
-    modelSrc: MEDGEMMA_4B_IT_Q4_1.src,
-    supports: ['food', 'health'],
-  },
-  {
-    id: 'smolvlm2-500m-q8',
-    name: 'SmolVLM2-500M Lite',
-    badge: 'Low-End Friendly',
-    badgeColor: '#3B82F6',
-    description: 'Smallest model available. Ideal for older phones or limited storage. Loads instantly.',
-    size: '546MB',
-    sizeBytes: 546308096,
-    modelSrc: SMOLVLM2_500M_MULTIMODAL_Q8_0.src,
-    projectionModelSrc: MMPROJ_SMOLVLM2_500M_MULTIMODAL_Q8_0.src,
-    supports: ALL,
-  },
-  {
-    id: 'qwen3-5-0.8b',
-    name: 'Qwen3.5-0.8B',
-    badge: 'Fast',
-    badgeColor: '#F59E0B',
-    description: 'Ultra-compact vision model. Quick scans with decent accuracy across all categories.',
-    size: '649MB',
-    sizeBytes: 649216000,
-    modelSrc: QWEN3_5_0_8B_MULTIMODAL_Q4_K_M.src,
-    projectionModelSrc: MMPROJ_QWEN3_5_0_8B_MULTIMODAL_Q8_0.src,
-    supports: ALL,
-  },
-  {
-    id: 'smolvlm2-500m',
-    name: 'SmolVLM2-500M',
-    description: 'Full-precision version of SmolVLM2. Sharper detail recognition than the Lite variant.',
-    size: '1GB',
-    sizeBytes: 1019215872,
-    modelSrc: SMOLVLM2_500M_MULTIMODAL_F16.src,
-    projectionModelSrc: MMPROJ_SMOLVLM2_500M_MULTIMODAL_F16.src,
-    supports: ALL,
-  },
-  {
-    id: 'qwen3vl-2b',
-    name: 'Qwen3-VL-2B',
-    description: 'Purpose-built vision-language model with strong scene understanding. Good all-rounder.',
-    size: '1.5GB',
-    sizeBytes: 1552000000,
-    modelSrc: QWEN3VL_2B_MULTIMODAL_Q4_K.src,
-    projectionModelSrc: MMPROJ_QWEN3VL_2B_MULTIMODAL_Q4_K.src,
-    supports: ALL,
-  },
-  {
-    id: 'qwen2.5-vl-3b',
-    name: 'Qwen3.5-VL-2B',
-    badge: 'Balanced',
-    badgeColor: '#8B5CF6',
-    description: 'Solid everyday model. Good accuracy without needing a high-end device.',
-    size: '1.9GB',
-    sizeBytes: 1952000000,
-    modelSrc: QWEN3_5_2B_MULTIMODAL_Q4_K_M.src,
-    projectionModelSrc: MMPROJ_QWEN3_5_2B_MULTIMODAL_BF16.src,
-    supports: ALL,
-  },
-  {
-    id: 'ocr-0.6b',
-    name: 'OCR Specialist',
-    badge: 'Text & Docs Only',
-    badgeColor: '#6366F1',
-    description: 'Fine-tuned specifically for reading text and documents. Much more accurate than general models for OCR.',
-    size: '1.2GB',
-    sizeBytes: 1216000000,
-    modelSrc: OCR_0_6B_MULTIMODAL_Q4_K_M.src,
-    projectionModelSrc: MMPROJ_OCR_0_6B_MULTIMODAL_F16.src,
+    id: 'qwen3-0.6b-text',
+    name: 'Qwen3-0.6B Chat',
+    modelType: 'text',
+    badge: 'Fastest',
+    badgeColor: '#10B981',
+    description: 'Smallest text model. Instant responses, very low RAM. Best for Quick Chat and Voice summaries.',
+    size: '382MB',
+    sizeBytes: 382_000_000,
+    modelSrc: QWEN3_600M_INST_Q4.src,
     supports: ['text'],
   },
   {
-    id: 'qwen3-5-4b',
-    name: 'Qwen3.5-4B',
+    id: 'llama-1b-text',
+    name: 'Llama 3.2-1B Chat',
+    modelType: 'text',
+    description: "Meta's compact instruct model. Fast and versatile for chat and writing tasks.",
+    size: '773MB',
+    sizeBytes: 773_000_000,
+    modelSrc: LLAMA_3_2_1B_INST_Q4_0.src,
+    supports: ['text'],
+  },
+  {
+    id: 'qwen3-1.7b-text',
+    name: 'Qwen3-1.7B Chat',
+    modelType: 'text',
+    badge: 'Recommended',
+    badgeColor: '#00CC6A',
+    description: 'Best balance of speed and quality for text tasks. Great for Scribe, Deep, and Quick Chat.',
+    size: '1GB',
+    sizeBytes: 1_057_000_000,
+    modelSrc: QWEN3_1_7B_INST_Q4.src,
+    supports: ['text'],
+  },
+  {
+    id: 'qwen3-4b-text',
+    name: 'Qwen3-4B Chat',
+    modelType: 'text',
     badge: 'High Quality',
     badgeColor: '#EC4899',
-    description: 'Best general-purpose accuracy in the lineup. Recommended when you need reliable results.',
-    size: '3.4GB',
-    sizeBytes: 3417000000,
-    modelSrc: QWEN3_5_4B_MULTIMODAL_Q4_K_M.src,
-    projectionModelSrc: MMPROJ_QWEN3_5_4B_MULTIMODAL_BF16.src,
-    supports: ALL,
+    description: 'High-quality text reasoning. Best for complex writing, analysis, and deep research.',
+    size: '2.5GB',
+    sizeBytes: 2_497_000_000,
+    modelSrc: QWEN3_4B_INST_Q4_K_M.src,
+    supports: ['text'],
+  },
+  {
+    id: 'medpsy-1.7b',
+    name: 'MedPsy-1.7B',
+    modelType: 'text',
+    badge: 'Health Specialist',
+    badgeColor: '#EF4444',
+    description: "qvac's purpose-built health & nutrition AI.",
+    size: '2.4GB',
+    sizeBytes: 2_564_052_800,
+    modelSrc: MEDGEMMA_4B_IT_Q4_1.src,
+    supports: ['text', 'health'],
   },
   {
     id: 'medpsy-4b',
     name: 'MedPsy-4B',
+    modelType: 'text',
     badge: 'Medical Grade',
     badgeColor: '#EF4444',
-    description: 'qvac\'s premium health model. Highest accuracy for medical images and nutrition analysis.',
+    description: "qvac's premium health model. Highest accuracy for medical and nutrition analysis.",
     size: '4.1GB',
-    sizeBytes: 4130402880,
+    sizeBytes: 4_130_402_880,
     modelSrc: MEDGEMMA_4B_IT_Q8_0.src,
-    supports: ['food', 'health'],
+    supports: ['text', 'health'],
+  },
+  // ── Vision LLMs (Peek Lens — require model.gguf + mmproj.gguf) ────────────
+  {
+    id: 'smolvlm2-500m-q8',
+    name: 'SmolVLM2-500M Lite',
+    modelType: 'vision',
+    badge: 'Low-End Friendly',
+    badgeColor: '#3B82F6',
+    description: 'Smallest vision model. Ideal for older phones or limited storage. Loads instantly.',
+    size: '546MB',
+    sizeBytes: 546_308_096,
+    modelSrc: SMOLVLM2_500M_MULTIMODAL_Q8_0.src,
+    projectionModelSrc: MMPROJ_SMOLVLM2_500M_MULTIMODAL_Q8_0.src,
+    supports: ['vision'],
+  },
+  {
+    id: 'qwen3-5-0.8b',
+    name: 'Qwen3.5-0.8B Vision',
+    modelType: 'vision',
+    badge: 'Fast',
+    badgeColor: '#F59E0B',
+    description: 'Ultra-compact vision model. Quick image analysis with decent accuracy.',
+    size: '649MB',
+    sizeBytes: 649_216_000,
+    modelSrc: QWEN3_5_0_8B_MULTIMODAL_Q4_K_M.src,
+    projectionModelSrc: MMPROJ_QWEN3_5_0_8B_MULTIMODAL_Q8_0.src,
+    supports: ['vision'],
+  },
+  {
+    id: 'smolvlm2-500m',
+    name: 'SmolVLM2-500M',
+    modelType: 'vision',
+    description: 'Full-precision SmolVLM2. Sharper detail recognition than the Lite variant.',
+    size: '1GB',
+    sizeBytes: 1_019_215_872,
+    modelSrc: SMOLVLM2_500M_MULTIMODAL_F16.src,
+    projectionModelSrc: MMPROJ_SMOLVLM2_500M_MULTIMODAL_F16.src,
+    supports: ['vision'],
+  },
+  {
+    id: 'qwen3vl-2b',
+    name: 'Qwen3-VL-2B Vision',
+    modelType: 'vision',
+    description: 'Purpose-built vision-language model with strong scene understanding.',
+    size: '1.5GB',
+    sizeBytes: 1_552_000_000,
+    modelSrc: QWEN3VL_2B_MULTIMODAL_Q4_K.src,
+    projectionModelSrc: MMPROJ_QWEN3VL_2B_MULTIMODAL_Q4_K.src,
+    supports: ['vision'],
+  },
+  {
+    id: 'ocr-0.6b',
+    name: 'OCR Specialist',
+    modelType: 'vision',
+    badge: 'Text & Docs',
+    badgeColor: '#6366F1',
+    description: 'Fine-tuned for reading text and documents. Much more accurate than general models for OCR.',
+    size: '1.2GB',
+    sizeBytes: 1_216_000_000,
+    modelSrc: OCR_0_6B_MULTIMODAL_Q4_K_M.src,
+    projectionModelSrc: MMPROJ_OCR_0_6B_MULTIMODAL_F16.src,
+    supports: ['vision'],
+  },
+  {
+    id: 'qwen2.5-vl-3b',
+    name: 'Qwen3.5-VL-2B Vision',
+    modelType: 'vision',
+    badge: 'Balanced',
+    badgeColor: '#8B5CF6',
+    description: 'Solid everyday vision model. Good accuracy without needing a high-end device.',
+    size: '1.9GB',
+    sizeBytes: 1_952_000_000,
+    modelSrc: QWEN3_5_2B_MULTIMODAL_Q4_K_M.src,
+    projectionModelSrc: MMPROJ_QWEN3_5_2B_MULTIMODAL_BF16.src,
+    supports: ['vision'],
+  },
+  {
+    id: 'qwen3-5-4b',
+    name: 'Qwen3.5-4B Vision',
+    modelType: 'vision',
+    badge: 'Best Vision',
+    badgeColor: '#F59E0B',
+    description: 'Best general-purpose vision accuracy in the lineup. Recommended for reliable results.',
+    size: '3.4GB',
+    sizeBytes: 3_417_000_000,
+    modelSrc: QWEN3_5_4B_MULTIMODAL_Q4_K_M.src,
+    projectionModelSrc: MMPROJ_QWEN3_5_4B_MULTIMODAL_BF16.src,
+    supports: ['vision'],
   },
   {
     id: 'gemma4-4b',
-    name: 'Gemma 4 (4B)',
-    badge: 'Best Accuracy',
+    name: 'Gemma 4 (4B) Vision',
+    modelType: 'vision',
+    badge: 'Top Tier',
     badgeColor: '#EAB308',
-    description: 'Google\'s latest vision model. Top-tier image understanding for complex scenes. Large download.',
+    description: "Google's latest vision model. Top-tier image understanding for complex scenes.",
     size: '6.4GB',
-    sizeBytes: 6397000000,
+    sizeBytes: 6_397_000_000,
     modelSrc: GEMMA4_4B_MULTIMODAL_Q4_K_M.src,
     projectionModelSrc: MMPROJ_GEMMA4_4B_MULTIMODAL_BF16.src,
-    supports: ALL,
+    supports: ['vision'],
   },
 ];
 
-export function getModelsForUseCase(useCase: string): ModelInfo[] {
-  return AVAILABLE_MODELS.filter((m) => m.supports.includes(useCase));
+export function isTextModel(m: ModelInfo): boolean {
+  return m.modelType === 'text';
+}
+
+export function isVisionModel(m: ModelInfo): boolean {
+  return m.modelType === 'vision';
+}
+
+const HF_REGEX = /registry:\/\/hf\/([^/]+\/[^/]+)\/(resolve|blob)\/([^/]+)\/(.+)/;
+
+export function getHfDownloadUrl(modelSrc: string): string {
+  const match = modelSrc.match(HF_REGEX);
+  if (match) {
+    return `https://huggingface.co/${match[1]}/resolve/${match[3]}/${match[4]}`;
+  }
+  return modelSrc;
 }
 
 export const DEFAULT_PROMPTS: Record<string, string> = {
@@ -273,15 +347,5 @@ Rules:
 };
 
 export function getSystemPrompt(useCase: string): string {
-  return DEFAULT_PROMPTS[useCase];
-}
-
-const HF_REGEX = /registry:\/\/hf\/([^/]+\/[^/]+)\/(resolve|blob)\/([^/]+)\/(.+)/;
-
-export function getHfDownloadUrl(modelSrc: string): string {
-  const match = modelSrc.match(HF_REGEX);
-  if (match) {
-    return `https://huggingface.co/${match[1]}/resolve/${match[3]}/${match[4]}`;
-  }
-  return modelSrc;
+  return DEFAULT_PROMPTS[useCase] ?? '';
 }

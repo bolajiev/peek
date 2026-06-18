@@ -9,7 +9,9 @@ import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { getDownloadedModels, getSettings } from '../utils/storage';
+import { isTextModel } from '../utils/models';
 import { IconBack, IconSend } from '../components/Icons';
+import MarkdownText from '../components/MarkdownText';
 
 interface Msg { id: string; role: 'user' | 'assistant'; text: string; streaming?: boolean; }
 
@@ -46,7 +48,9 @@ export default function QuickChatScreen() {
   const loadOnMount = async () => {
     setLoading(true);
     try {
-      const models = await getDownloadedModels();
+      const all = await getDownloadedModels();
+      const textModels = all.filter(isTextModel);
+      const models = textModels.length > 0 ? textModels : all;
       if (!models.length) { setNoModel(true); setLoading(false); return; }
       const model = (preselectedModelId ? models.find(m => m.id === preselectedModelId) : null) ?? models[0];
       setModelName(model.name);
@@ -183,9 +187,13 @@ export default function QuickChatScreen() {
                 ? { backgroundColor: theme.accent, borderBottomRightRadius: 4 }
                 : { backgroundColor: theme.cardAlt, borderBottomLeftRadius: 4 },
             ]}>
-              <Text style={[styles.bubbleText, { color: msg.role === 'user' ? theme.accentFg : theme.text }]}>
-                {msg.text}{msg.streaming ? '▍' : ''}
-              </Text>
+              {msg.role === 'assistant' && !msg.streaming ? (
+                <MarkdownText color={theme.text} fontSize={14} lineHeight={21}>{msg.text}</MarkdownText>
+              ) : (
+                <Text style={[styles.bubbleText, { color: msg.role === 'user' ? theme.accentFg : theme.text }]}>
+                  {msg.text}{msg.streaming ? '▍' : ''}
+                </Text>
+              )}
             </View>
           </View>
         ))}
@@ -210,14 +218,24 @@ export default function QuickChatScreen() {
             returnKeyType="send"
             blurOnSubmit={false}
           />
-          <TouchableOpacity
-            style={[styles.sendBtn, { backgroundColor: canSend ? theme.accent : theme.cardAlt }]}
-            onPress={send}
-            disabled={!canSend}
-            activeOpacity={0.8}
-          >
-            <IconSend size={16} color={canSend ? theme.accentFg : theme.textSecondary} />
-          </TouchableOpacity>
+          {isTyping ? (
+            <TouchableOpacity
+              style={[styles.sendBtn, { backgroundColor: theme.error }]}
+              onPress={() => { if (runRef.current) void cancel({ requestId: runRef.current.requestId }).catch(() => {}); }}
+              activeOpacity={0.8}
+            >
+              <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: '#fff' }} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.sendBtn, { backgroundColor: canSend ? theme.accent : theme.cardAlt }]}
+              onPress={send}
+              disabled={!canSend}
+              activeOpacity={0.8}
+            >
+              <IconSend size={16} color={canSend ? theme.accentFg : theme.textSecondary} />
+            </TouchableOpacity>
+          )}
         </View>
       </KeyboardAvoidingView>
       )}

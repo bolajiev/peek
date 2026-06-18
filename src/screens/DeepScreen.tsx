@@ -10,8 +10,10 @@ import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext } from '../utils/ragService';
 import { getDownloadedModels, getSettings } from '../utils/storage';
-import { completion, loadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
+import { completion, cancel, loadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
+import { isTextModel } from '../utils/models';
+import MarkdownText from '../components/MarkdownText';
 
 type Phase = 'idle' | 'ingesting' | 'ready' | 'thinking';
 
@@ -34,6 +36,7 @@ export default function DeepScreen() {
   const [noModel, setNoModel] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const embedIdRef = useRef<string>('');
+  const currentRunRef = useRef<any>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
 
@@ -46,7 +49,9 @@ export default function DeepScreen() {
     setLlmLoading(true);
     setLlmProgress(0);
     try {
-      const models = await getDownloadedModels();
+      const all = await getDownloadedModels();
+      const textModels = all.filter(isTextModel);
+      const models = textModels.length > 0 ? textModels : all;
       if (!models.length) { setNoModel(true); setLlmLoading(false); return; }
       const model = (preselectedModelId ? models.find(m => m.id === preselectedModelId) : null) ?? models[0];
       const settings = await getSettings();
@@ -129,9 +134,15 @@ If the answer isn't in the context, say so clearly. Never fabricate information.
 
       let full = '';
       const run = completion({ modelId: llmModelId, history: msgs, stream: true });
+      currentRunRef.current = run;
       for await (const ev of run.events) {
-        if ((ev as any).type === 'contentDelta') full += (ev as any).text;
+        if ((ev as any).type === 'contentDelta') {
+          full += (ev as any).text;
+          setMessages([...newMessages, { role: 'assistant', text: full }]);
+          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 0);
+        }
       }
+      currentRunRef.current = null;
 
       setMessages([...newMessages, { role: 'assistant', text: full.trim() || 'No response.' }]);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -223,9 +234,11 @@ If the answer isn't in the context, say so clearly. Never fabricate information.
                     ? { backgroundColor: theme.accent, borderBottomRightRadius: 4 }
                     : { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1, borderBottomLeftRadius: 4 },
                 ]}>
-                  <Text selectable style={[styles.bubbleText, { color: msg.role === 'user' ? '#fff' : theme.text }]}>
-                    {msg.text}
-                  </Text>
+                  {msg.role === 'assistant' ? (
+                    <MarkdownText color={theme.text} fontSize={15} lineHeight={22}>{msg.text}</MarkdownText>
+                  ) : (
+                    <Text selectable style={[styles.bubbleText, { color: '#fff' }]}>{msg.text}</Text>
+                  )}
                 </View>
               </View>
             ))}
@@ -250,13 +263,22 @@ If the answer isn't in the context, say so clearly. Never fabricate information.
               returnKeyType="send"
               editable={!isBusy}
             />
-            <TouchableOpacity
-              style={[styles.sendBtn, { backgroundColor: question.trim() && !isBusy ? theme.accent : theme.cardAlt }]}
-              onPress={handleAsk}
-              disabled={!question.trim() || isBusy}
-            >
-              <Text style={[styles.sendBtnText, { color: question.trim() && !isBusy ? '#fff' : theme.textSecondary }]}>›</Text>
-            </TouchableOpacity>
+            {phase === 'thinking' ? (
+              <TouchableOpacity
+                style={[styles.sendBtn, { backgroundColor: theme.error }]}
+                onPress={() => { if (currentRunRef.current) void cancel({ requestId: currentRunRef.current.requestId }).catch(() => {}); }}
+              >
+                <View style={{ width: 14, height: 14, borderRadius: 2, backgroundColor: '#fff' }} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.sendBtn, { backgroundColor: question.trim() ? theme.accent : theme.cardAlt }]}
+                onPress={handleAsk}
+                disabled={!question.trim() || isBusy}
+              >
+                <Text style={[styles.sendBtnText, { color: question.trim() ? '#fff' : theme.textSecondary }]}>›</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </>
       )}
