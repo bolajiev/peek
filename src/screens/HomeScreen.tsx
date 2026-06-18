@@ -48,19 +48,19 @@ const MODULES: Module[] = [
     // but Voice handles its own download prompt internally — no lifecycle gate
   },
   {
-    id: 'Scribe', screen: 'Scribe', label: 'MedPsy · Health AI', title: 'Peek Scribe',
+    id: 'Scribe', screen: 'Scribe', label: 'MedPsy', title: 'Peek Scribe',
     desc: 'Draft documents, meal plans, and notes',
     icon: (c) => <IconScribe size={20} color={c} />,
     modelKey: MODEL_KEYS.TEXT_HEALTH,
   },
   {
-    id: 'Deep', screen: 'Deep', label: 'MedPsy · Health AI', title: 'Peek Deep',
+    id: 'Deep', screen: 'Deep', label: 'MedPsy', title: 'Peek Deep',
     desc: 'Research documents privately on-device',
     icon: (c) => <IconDeep size={20} color={c} />,
     modelKey: MODEL_KEYS.TEXT_HEALTH,
   },
   {
-    id: 'QuickChat', screen: 'QuickChat', label: 'MedPsy · Health AI', title: 'Quick Chat',
+    id: 'QuickChat', screen: 'QuickChat', label: 'MedPsy', title: 'Quick Chat',
     desc: 'Ask anything — fast, private, on-device',
     icon: (c) => <IconScribe size={20} color={c} />,
     modelKey: MODEL_KEYS.TEXT_HEALTH,

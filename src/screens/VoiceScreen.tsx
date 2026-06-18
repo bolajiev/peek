@@ -149,7 +149,7 @@ export default function VoiceScreen() {
         setPhase('transcript');
         Alert.alert(
           'Model needed',
-          'Download MedPsy · Health AI to summarize.',
+          'Download MedPsy to summarize.',
           [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Download', onPress: () => navigation.navigate('Download', { modelId: MODEL_KEYS.TEXT_HEALTH, returnTo: 'Voice', returnParams: {} }) },

@@ -30,11 +30,11 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   },
   {
     id: MODEL_KEYS.TEXT_HEALTH,
-    name: 'MedPsy · Health AI',
+    name: 'MedPsy',
     modelType: 'text',
     badge: 'Default',
     badgeColor: '#FDC803',
-    description: 'Default AI with deep health and medical knowledge. Best for Quick Chat, Scribe, Voice, and Deep.',
+    description: 'Default AI. Knowledgeable, accurate, and runs fully on-device. Best for Quick Chat, Scribe, Voice, and Deep.',
     size: '2.4GB',
     sizeBytes: 2_564_052_800,
     modelSrc: MEDGEMMA_4B_IT_Q4_1.src,
