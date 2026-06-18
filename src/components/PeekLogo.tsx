@@ -7,7 +7,7 @@ interface Props {
   pulse?: boolean;
 }
 
-export function PeekLogo({ size = 80, color = '#00FF87', pulse = false }: Props) {
+export function PeekLogo({ size = 80, color = '#FDC803', pulse = false }: Props) {
   const anim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {

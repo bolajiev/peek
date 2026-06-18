@@ -1,6 +1,8 @@
 import React from 'react';
-import { Text, View, StyleSheet } from 'react-native';
+import { Text } from 'react-native';
 import Markdown from 'react-native-markdown-display';
+import { getTheme } from '../theme';
+import { useTheme } from '../navigation/AppNavigator';
 
 interface Props {
   children: string;
@@ -11,6 +13,9 @@ interface Props {
 }
 
 export default function MarkdownText({ children, color, fontSize = 15, lineHeight = 22, selectable }: Props) {
+  const theme = getTheme(useTheme());
+  const codeBg = theme.cardAlt;
+
   const rules = {
     text: (node: any, _children: any, _parent: any, styles: any) => (
       <Text key={node.key} style={[styles.text, { color, fontSize, lineHeight }]}>
@@ -30,7 +35,7 @@ export default function MarkdownText({ children, color, fontSize = 15, lineHeigh
     code_inline: {
       fontFamily: 'monospace',
       fontSize: fontSize - 1,
-      backgroundColor: 'rgba(128,128,128,0.18)',
+      backgroundColor: codeBg,
       color,
       borderRadius: 4,
       paddingHorizontal: 4,
@@ -38,7 +43,7 @@ export default function MarkdownText({ children, color, fontSize = 15, lineHeigh
     code_block: {
       fontFamily: 'monospace',
       fontSize: fontSize - 1,
-      backgroundColor: 'rgba(128,128,128,0.18)',
+      backgroundColor: codeBg,
       color,
       borderRadius: 8,
       padding: 12,
@@ -47,7 +52,7 @@ export default function MarkdownText({ children, color, fontSize = 15, lineHeigh
     fence: {
       fontFamily: 'monospace',
       fontSize: fontSize - 1,
-      backgroundColor: 'rgba(128,128,128,0.18)',
+      backgroundColor: codeBg,
       color,
       borderRadius: 8,
       padding: 12,

@@ -255,7 +255,7 @@ export default function ModelsScreen() {
                   style={[styles.downloadBtn, { backgroundColor: theme.accent }]}
                   onPress={() => handleDownload(model)}
                 >
-                  <Text style={[styles.downloadBtnText, { color: '#fff' }]}>Get</Text>
+                  <Text style={[styles.downloadBtnText, { color: theme.accentFg }]}>Get</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -278,8 +278,8 @@ export default function ModelsScreen() {
             <Text style={[styles.chipText, { color: theme.textSecondary }]}>{model.size}</Text>
           </View>
           {isVision ? (
-            <View style={[styles.chip, { borderColor: '#3B82F6' + '66', backgroundColor: '#3B82F6' + '15' }]}>
-              <Text style={[styles.chipText, { color: '#3B82F6' }]}>Vision</Text>
+            <View style={[styles.chip, { borderColor: theme.visionChip + '66', backgroundColor: theme.visionChip + '15' }]}>
+              <Text style={[styles.chipText, { color: theme.visionChip }]}>Vision</Text>
             </View>
           ) : (
             <View style={[styles.chip, { borderColor: theme.border }]}>
@@ -311,7 +311,7 @@ export default function ModelsScreen() {
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>On Device</Text>
               <View style={[styles.countBadge, { backgroundColor: theme.accent }]}>
-                <Text style={[styles.countText, { color: '#fff' }]}>{downloadedModels.length}</Text>
+                <Text style={[styles.countText, { color: theme.accentFg }]}>{downloadedModels.length}</Text>
               </View>
             </View>
             {downloadedModels.map((m) => renderModelCard(m, true))}

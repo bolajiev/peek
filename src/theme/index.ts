@@ -1,42 +1,55 @@
 import { ThemeMode } from '../types';
 
 export interface Theme {
+  // Surfaces
   background: string;
-  card: string;
-  cardAlt: string;
-  accent: string;
-  accentFg: string;
+  card: string;       // surface
+  cardAlt: string;    // surfaceAlt (raised elements, inputs)
+
+  // Brand
+  accent: string;     // primary — brand yellow #FDC803
+  accentFg: string;   // onPrimary — always black (text/icons ON yellow)
+
+  // Typography
   text: string;
-  textSecondary: string;
+  textSecondary: string; // textMuted
+
+  // Structure
   border: string;
   error: string;
-  success: string;
+  success: string;    // live/online status dot ONLY — never use as accent
+
+  // Semantic chips
+  visionChip: string; // vision model type indicator
 }
 
 export const darkTheme: Theme = {
-  background: '#0A0A0A',
-  card: '#141414',
-  cardAlt: '#1C1C1C',
-  accent: '#00BFA5',
-  accentFg: '#000000',
-  text: '#FFFFFF',
-  textSecondary: '#666666',
-  border: '#2A2A2A',
-  error: '#FF4444',
-  success: '#4CAF50',
+  background:    '#000000',
+  card:          '#141414',
+  cardAlt:       '#1E1E1E',
+  accent:        '#FDC803',
+  accentFg:      '#000000',
+  text:          '#FFFFFF',
+  textSecondary: '#9A9A9A',
+  border:        '#2A2A2A',
+  error:         '#FF5247',
+  success:       '#2BD4A0',
+  visionChip:    '#3B82F6',
 };
 
+// Light theme — dark is the only official theme for now; this is a stub
 export const lightTheme: Theme = {
-  background: '#F5F4F0',
-  card: '#FFFFFF',
-  cardAlt: '#EFEFEB',
-  accent: '#00A693',
-  accentFg: '#000000',
-  text: '#0A0A0A',
-  textSecondary: '#888888',
-  border: '#E5E5E5',
-  error: '#D32F2F',
-  success: '#388E3C',
+  background:    '#FAFAF5',
+  card:          '#FFFFFF',
+  cardAlt:       '#F0EFE8',
+  accent:        '#D4A800',   // slightly deeper yellow for white bg
+  accentFg:      '#000000',
+  text:          '#0A0A0A',
+  textSecondary: '#6B6B6B',
+  border:        '#E0E0E0',
+  error:         '#E53935',
+  success:       '#2BD4A0',
+  visionChip:    '#3B82F6',
 };
 
 export function getTheme(mode: ThemeMode): Theme {
