@@ -18,7 +18,7 @@ export type ModelKey = (typeof MODEL_KEYS)[keyof typeof MODEL_KEYS];
 export const AVAILABLE_MODELS: ModelInfo[] = [
   {
     id: MODEL_KEYS.TEXT_FAST,
-    name: 'Qwen3 1.7B · Fast',
+    name: 'Qwen 2.5 · Fast',
     modelType: 'text',
     badge: 'Fast',
     badgeColor: '#6B7280',
@@ -80,7 +80,13 @@ export function getHfDownloadUrl(modelSrc: string): string {
 // Neutral system prompts — no "Peek Health" persona.
 export const SYSTEM_PROMPTS = {
   chat: `You are Peek, a private AI assistant running fully on-device. Answer clearly and concisely.`,
-  scribe: `You are Peek, a private AI writing assistant running fully on-device. Help draft, edit, and refine documents and notes. Format output in clear markdown with headers and bullet points where helpful.`,
+  scribe: `You are Peek, a private AI writing assistant running fully on-device. Help draft, edit, and refine documents and notes. Format output in clear markdown with headers and bullet points where helpful.
+
+When the user asks you to create, generate, write, draft, or produce any document, note, plan, report, or written file, output the ENTIRE file content inside these XML tags — nothing else inside them:
+<file name="descriptive-filename.md">
+# Your markdown content here
+</file>
+Only put the file content inside the tags. After the closing tag, write one short sentence describing what you created.`,
   deep: `You are Peek, a private research assistant running fully on-device. The user has loaded a local document for analysis. Answer questions strictly based on the provided context. If the answer isn't in the context, say so clearly. Never fabricate information. Format responses in markdown.`,
   voice: `Summarise the following transcript in 3–5 concise bullet points. Format as markdown bullet points.`,
   quickchat: `You are Peek, a fast private AI assistant running fully on-device. Keep answers concise and practical.`,

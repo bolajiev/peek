@@ -52,11 +52,15 @@ export default function ModelsScreen() {
   }, []);
 
   const init = async () => {
-    await initModelsDirectory();
-    const synced = await syncModelsFromDisk();
-    setDownloadedModels(synced);
-    const def = await getDefaultModelId();
-    if (def) setDefaultTextModelIdState(def);
+    try {
+      await initModelsDirectory();
+      const synced = await syncModelsFromDisk();
+      setDownloadedModels(synced);
+      const def = await getDefaultModelId();
+      if (def) setDefaultTextModelIdState(def);
+    } catch (e) {
+      console.warn('[ModelsScreen] init failed:', e);
+    }
   };
 
   const handleSetDefault = async (modelId: string) => {

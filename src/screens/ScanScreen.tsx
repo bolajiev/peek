@@ -15,9 +15,8 @@ import { isVisionModel } from '../utils/models';
 import { logInference } from '../utils/auditLogger';
 import { ModelInfo } from '../types';
 
-const SYSTEM_PROMPT = `You are Peek, a private on-device AI assistant with vision. Answer the user's question about the image accurately and concisely.`;
-
-
+// Short, directive prompt — fewer prompt tokens = faster TTFT
+const SYSTEM_PROMPT = `You are Peek, a private on-device AI with vision. Answer in 2-4 sentences. Be direct and specific about what you see.`;
 
 export default function ScanScreen() {
   const navigation = useNavigation<any>();
@@ -34,12 +33,59 @@ export default function ScanScreen() {
   const [question, setQuestion] = useState('');
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [zoom, setZoom] = useState(0);
+  const [modelReady, setModelReady] = useState(false);
+
+  // Cached model — loaded on focus, released on blur
+  const modelIdRef = useRef<string | null>(null);
+  const modelInfoRef = useRef<ModelInfo | null>(null);
+  const isLoadingModelRef = useRef(false);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const captureScale = useRef(new Animated.Value(1)).current;
   const analyzeAnim = useRef(new Animated.Value(0)).current;
   const runRef = useRef<any>(null);
 
+  // Preload model silently so capture is instant
+  const preloadModel = async () => {
+    if (modelIdRef.current || isLoadingModelRef.current) return;
+    isLoadingModelRef.current = true;
+    try {
+      const modelInfo = await findModel(preselectedModelId);
+      if (!modelInfo) return;
+      modelInfoRef.current = modelInfo;
+      const settings = await getSettings();
+      const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
+      const modelConfig: any = { ctx_size: 1024, device };
+      if (modelInfo.projectionModelSrc) modelConfig.projectionModelSrc = toPath(modelInfo.projectionModelSrc);
+      const mid = await loadModel({
+        modelSrc: toPath(modelInfo.modelSrc),
+        modelType: 'llm',
+        modelConfig,
+      });
+      modelIdRef.current = mid;
+      setModelReady(true);
+    } catch {
+      // silent — will fall back to loading on capture
+    } finally {
+      isLoadingModelRef.current = false;
+    }
+  };
+
+  // Model lifecycle: load on focus, release on blur
+  useFocusEffect(React.useCallback(() => {
+    preloadModel();
+    return () => {
+      if (modelIdRef.current) {
+        unloadModel({ modelId: modelIdRef.current }).catch(() => {});
+        modelIdRef.current = null;
+        modelInfoRef.current = null;
+      }
+      setModelReady(false);
+      isLoadingModelRef.current = false;
+    };
+  }, []));
+
+  // Gallery auto-launch and camera permission
   const didAutoLaunch = useRef(false);
   useFocusEffect(React.useCallback(() => {
     if (launchMode === 'gallery') {
@@ -66,53 +112,60 @@ export default function ScanScreen() {
     setZoom(prev => Math.min(1, Math.max(0, parseFloat((prev + delta).toFixed(2)))));
   };
 
-  // Computed display level: 1× – 10×
   const zoomLabel = `${(1 + zoom * 9).toFixed(zoom === 0 ? 0 : 1)}×`;
 
   const runInference = async (imageUri: string) => {
     setIsAnalyzing(true);
     setPreviewUri(imageUri);
-    setAnalysisText('Saving image...');
+    setAnalysisText('Saving...');
 
     Animated.timing(analyzeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
 
-    let loadedId: string | null = null;
     try {
       const savedFile = new File(Paths.document, `peek_${Date.now()}.jpg`);
       new File(imageUri).copy(savedFile);
 
-      setAnalysisText('Loading model...');
-      const modelInfo = await findModel(preselectedModelId);
-      if (!modelInfo) {
-        setIsAnalyzing(false);
-        setPreviewUri(null);
-        navigation.navigate('Download', { modelId: 'vision', returnTo: 'LensScan', returnParams: { mode: launchMode } });
-        return;
+      // Use cached model if ready; otherwise load now (first-time fallback)
+      let mid = modelIdRef.current;
+      let modelInfo = modelInfoRef.current;
+
+      if (!mid) {
+        setAnalysisText('Loading model...');
+        modelInfo = await findModel(preselectedModelId);
+        if (!modelInfo) {
+          setIsAnalyzing(false);
+          setPreviewUri(null);
+          navigation.navigate('Download', { modelId: 'vision', returnTo: 'LensScan', returnParams: { mode: launchMode } });
+          return;
+        }
+        modelInfoRef.current = modelInfo;
+        const settings = await getSettings();
+        const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
+        const modelConfig: any = { ctx_size: 1024, device };
+        if (modelInfo.projectionModelSrc) modelConfig.projectionModelSrc = toPath(modelInfo.projectionModelSrc);
+        mid = await loadModel({
+          modelSrc: toPath(modelInfo.modelSrc),
+          modelType: 'llm',
+          modelConfig,
+          onProgress: (p) => setAnalysisText(`Loading ${p.percentage.toFixed(0)}%`),
+        });
+        modelIdRef.current = mid;
+        setModelReady(true);
       }
-
-      const settings = await getSettings();
-      const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
-      const modelConfig: any = { ctx_size: 2048, device };
-      if (modelInfo.projectionModelSrc) modelConfig.projectionModelSrc = toPath(modelInfo.projectionModelSrc);
-
-      loadedId = await loadModel({
-        modelSrc: toPath(modelInfo.modelSrc),
-        modelType: 'llm',
-        modelConfig,
-        onProgress: (p) => setAnalysisText(`Loading ${p.percentage.toFixed(0)}%`),
-      });
 
       const q = question.trim() || 'What is this? Describe what you see.';
       setAnalysisText('Analyzing...');
       const t0 = Date.now();
 
       const run = completion({
-        modelId: loadedId,
+        modelId: mid,
         history: [
           { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: q, attachments: [{ path: savedFile.uri }] },
+          { role: 'user', content: q, attachments: [{ path: toPath(savedFile.uri) }] },
         ],
         stream: true,
+        // Cap tokens and tune sampling for speed
+        generationParams: { predict: 220, temp: 0.3, top_k: 20 },
       });
       runRef.current = run;
 
@@ -122,7 +175,7 @@ export default function ScanScreen() {
         if (event.type === 'contentDelta') {
           fullText += event.text;
           wordCount = fullText.split(' ').length;
-          setAnalysisText(`Analyzing... ${wordCount} words`);
+          if (wordCount % 4 === 0) setAnalysisText(`Analyzing... ${wordCount} words`);
         }
       }
       const final = await run.final;
@@ -134,20 +187,19 @@ export default function ScanScreen() {
       const ttftMs = stats?.timeToFirstToken || totalMs;
       const tokensPredicted = stats?.generatedTokens || 0;
 
-      await logInference('scan', modelInfo.name, ttftMs, totalMs, tokensPredicted);
+      await logInference('scan', modelInfo!.name, ttftMs, totalMs, tokensPredicted);
       await updateScanStreak();
 
-      const scanResult = { type: 'scan', text: fullText || 'No response.', query: q };
       await addHistoryItem({
         id: Date.now().toString(),
         timestamp: new Date().toISOString(),
         query: q,
-        result: scanResult,
+        result: { type: 'scan', text: fullText || 'No response.', query: q },
         imagePath: savedFile.uri,
-        modelName: modelInfo.name,
+        modelName: modelInfo!.name,
       });
 
-      await unloadModel({ modelId: loadedId! });
+      // Keep model loaded — don't unload here
       setIsAnalyzing(false);
       setPreviewUri(null);
       Animated.timing(analyzeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
@@ -158,11 +210,10 @@ export default function ScanScreen() {
         imagePath: savedFile.uri,
         inferenceMs: totalMs,
         tokensPerSec,
-        modelName: modelInfo.name,
+        modelName: modelInfo!.name,
       });
     } catch (err: any) {
       runRef.current = null;
-      if (typeof loadedId === 'string') await unloadModel({ modelId: loadedId }).catch(() => {});
       setIsAnalyzing(false);
       setPreviewUri(null);
       Animated.timing(analyzeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
@@ -183,7 +234,7 @@ export default function ScanScreen() {
       Animated.timing(captureScale, { toValue: 0.88, duration: 80, useNativeDriver: true }),
       Animated.spring(captureScale, { toValue: 1, useNativeDriver: true, friction: 4 }),
     ]).start();
-    const photo = await cameraRef.current.takePictureAsync({ quality: 0.85 });
+    const photo = await cameraRef.current.takePictureAsync({ quality: 0.72 });
     if (photo?.uri) await runInference(photo.uri);
   };
 
@@ -193,7 +244,6 @@ export default function ScanScreen() {
     if (!result.canceled && result.assets?.[0]?.uri) {
       await runInference(result.assets[0].uri);
     } else if (result.canceled && launchMode === 'gallery') {
-      // Came here specifically for gallery — go back to hub on cancel
       navigation.goBack();
     }
   };
@@ -218,7 +268,6 @@ export default function ScanScreen() {
     <View style={styles.container}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back" mode="picture" zoom={zoom} mute>
 
-        {/* Top bar — back + zoom indicator */}
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
             <Text style={styles.backText}>← Back</Text>
@@ -228,10 +277,8 @@ export default function ScanScreen() {
           </View>
         </View>
 
-        {/* Viewfinder spacer (no brackets per spec) */}
         <View style={styles.viewfinderFlex} />
 
-        {/* Analyzing overlay */}
         {isAnalyzing && (
           <View style={styles.analyzeOverlay}>
             {previewUri && <Image source={{ uri: previewUri }} style={styles.previewThumb} />}
@@ -242,12 +289,12 @@ export default function ScanScreen() {
 
       </CameraView>
 
-      {/* Solid bottom bar — outside CameraView so it's always opaque */}
+      {/* Bottom bar */}
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={[styles.bottomBar, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
           <TextInput
             style={[styles.questionInput, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
-            placeholder="Ask about this image…"
+            placeholder={modelReady ? 'Ask about this image…' : 'Preparing vision model…'}
             placeholderTextColor={theme.textSecondary}
             value={question}
             onChangeText={setQuestion}
@@ -268,12 +315,12 @@ export default function ScanScreen() {
 
             <Animated.View style={{ transform: [{ scale: captureScale }] }}>
               <TouchableOpacity
-                style={[styles.captureBtn, { borderColor: theme.accent, opacity: isAnalyzing ? 0.4 : 1 }]}
+                style={[styles.captureBtn, { borderColor: modelReady ? theme.accent : theme.border, opacity: isAnalyzing ? 0.4 : 1 }]}
                 onPress={handleCapture}
                 disabled={isAnalyzing}
                 activeOpacity={0.85}
               >
-                <View style={[styles.captureInner, { backgroundColor: theme.accent }]} />
+                <View style={[styles.captureInner, { backgroundColor: modelReady ? theme.accent : theme.textSecondary }]} />
               </TouchableOpacity>
             </Animated.View>
 
@@ -306,7 +353,6 @@ function ActivityDots({ color }: { color: string }) {
 
 async function findModel(preselectedId?: string): Promise<ModelInfo | null> {
   const downloaded = await syncModelsFromDisk();
-  // Lens requires a vision model (needs projection/mmproj file)
   const visionModels = downloaded.filter(isVisionModel);
   const pool = visionModels.length > 0 ? visionModels : downloaded;
   if (pool.length === 0) return null;
@@ -335,7 +381,6 @@ const styles = StyleSheet.create({
   },
   previewThumb: { width: 110, height: 110, borderRadius: 14 },
   analyzeText: { fontSize: 14, fontWeight: '600' },
-  // Solid bottom bar — outside CameraView
   bottomBar: { borderTopWidth: 1, paddingTop: 14, paddingHorizontal: 16, paddingBottom: 32 },
   questionInput: {
     borderRadius: 14, borderWidth: 1,

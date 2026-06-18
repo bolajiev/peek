@@ -1,8 +1,11 @@
 import { ragIngest, ragSearch, ragCloseWorkspace } from '@qvac/sdk';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const WORKSPACE = 'peek-memory';
 const DOC_COUNT_KEY = '@peek_rag_docs';
+
+export function newRagWorkspace(): string {
+  return `peek-deep-${Date.now()}`;
+}
 
 export async function getRagDocCount(): Promise<number> {
   const val = await AsyncStorage.getItem(DOC_COUNT_KEY);
@@ -17,12 +20,13 @@ async function bumpDocCount(): Promise<void> {
 export async function ragIngestText(
   embeddingModelId: string,
   text: string,
+  workspace: string,
   onProgress?: (pct: number) => void
 ): Promise<void> {
   await ragIngest({
     modelId: embeddingModelId,
     documents: [text],
-    workspace: WORKSPACE,
+    workspace,
     chunk: true,
     chunkOpts: { chunkSize: 256, chunkOverlap: 32 },
     onProgress: (stage, current, total) => {
@@ -35,14 +39,16 @@ export async function ragIngestText(
 export async function ragQuery(
   embeddingModelId: string,
   query: string,
-  topK = 3
+  topK = 3,
+  workspace?: string,
 ): Promise<string[]> {
+  if (!workspace) return [];
   try {
     const results = await ragSearch({
       modelId: embeddingModelId,
       query,
       topK,
-      workspace: WORKSPACE,
+      workspace,
     });
     return results.map((r) => r.content).filter(Boolean);
   } catch {
@@ -50,8 +56,9 @@ export async function ragQuery(
   }
 }
 
-export async function closeRagWorkspace(): Promise<void> {
-  await ragCloseWorkspace({ workspace: WORKSPACE }).catch(() => {});
+export async function closeRagWorkspace(workspace: string): Promise<void> {
+  if (!workspace) return;
+  await ragCloseWorkspace({ workspace }).catch(() => {});
 }
 
 export function buildRagContext(docs: string[]): string {

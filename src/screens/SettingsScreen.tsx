@@ -1,15 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, Switch,
+  Alert, Switch,
 } from 'react-native';
 import * as Device from 'expo-device';
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme, useThemeToggle } from '../navigation/AppNavigator';
 import {
-  getSettings, setAccelerator, setResponseLength,
-  getHuggingFaceToken, setHuggingFaceToken, clearAllData,
+  getSettings, setAccelerator, setResponseLength, clearAllData,
 } from '../utils/storage';
 import { Accelerator, ResponseLength } from '../types';
 
@@ -22,8 +21,6 @@ export default function SettingsScreen() {
 
   const [accelerator, setAccelState] = useState<Accelerator>('cpu');
   const [responseLength, setRespLength] = useState<ResponseLength>('balanced');
-  const [hfToken, setHfToken] = useState('');
-  const [showToken, setShowToken] = useState(false);
   const [deviceModel, setDeviceModel] = useState('');
   const [deviceBrand, setDeviceBrand] = useState('');
   const [totalMemory, setTotalMemory] = useState('N/A');
@@ -37,8 +34,6 @@ export default function SettingsScreen() {
     const settings = await getSettings();
     setAccelState(settings.accelerator);
     setRespLength(settings.responseLength);
-    const token = await getHuggingFaceToken();
-    setHfToken(token);
   };
 
   const loadDeviceInfo = () => {
@@ -56,11 +51,6 @@ export default function SettingsScreen() {
   const handleResponseLength = (value: ResponseLength) => {
     setRespLength(value);
     setResponseLength(value);
-  };
-
-  const handleSaveToken = () => {
-    setHuggingFaceToken(hfToken);
-    Alert.alert('Saved', 'HuggingFace token saved.');
   };
 
   const handleClearData = () => {
@@ -128,33 +118,6 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>HuggingFace Token</Text>
-        <View style={[styles.card, { backgroundColor: theme.card }]}>
-          <TextInput
-            style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-            value={hfToken}
-            onChangeText={setHfToken}
-            placeholder="hf_..."
-            placeholderTextColor={theme.textSecondary}
-            secureTextEntry={!showToken}
-            autoCapitalize="none"
-          />
-          <View style={styles.tokenActions}>
-            <TouchableOpacity
-              style={[styles.tokenBtn, { borderColor: theme.border }]}
-              onPress={() => setShowToken(!showToken)}
-            >
-              <Text style={[styles.tokenBtnText, { color: theme.textSecondary }]}>{showToken ? 'Hide' : 'Show'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tokenBtn, { backgroundColor: theme.accent }]}
-              onPress={handleSaveToken}
-            >
-              <Text style={[styles.tokenBtnText, { color: theme.accentFg }]}>Save</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Device</Text>
         <View style={[styles.card, { backgroundColor: theme.card }]}>
           {[['Model', deviceModel], ['Brand', deviceBrand], ['RAM', totalMemory]].map(([k, v]) => (
@@ -209,10 +172,6 @@ const styles = StyleSheet.create({
   optionsRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   optionBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8, borderWidth: 1 },
   optionText: { fontSize: 13, fontWeight: '600' },
-  input: { borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
-  tokenActions: { flexDirection: 'row', gap: 8 },
-  tokenBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
-  tokenBtnText: { fontSize: 14, fontWeight: '600' },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },
   infoKey: { fontSize: 14 },
   infoVal: { fontSize: 14, fontWeight: '600' },

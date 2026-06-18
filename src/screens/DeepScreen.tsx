@@ -1,14 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
-  Animated, ActivityIndicator, Alert, Keyboard, Platform, KeyboardAvoidingView,
+  Animated, ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Paths, File, Directory } from 'expo-file-system';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { ragIngestText, ragQuery, buildRagContext } from '../utils/ragService';
+import { ragIngestText, ragQuery, buildRagContext, newRagWorkspace, closeRagWorkspace } from '../utils/ragService';
 import { syncModelsFromDisk, getSettings, getDefaultModelId, toPath } from '../utils/storage';
 import { completion, cancel, loadModel, unloadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
@@ -18,7 +19,13 @@ import CopyButton from '../components/CopyButton';
 
 type Phase = 'idle' | 'ingesting' | 'ready' | 'thinking';
 
-interface Message { role: 'user' | 'assistant'; text: string; }
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  sources?: string[];
+  showSources?: boolean;
+}
 
 export default function DeepScreen() {
   const navigation = useNavigation<any>();
@@ -26,6 +33,7 @@ export default function DeepScreen() {
   const preselectedModelId: string | undefined = route.params?.modelId;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
+  const insets = useSafeAreaInsets();
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [sourceTitle, setSourceTitle] = useState('');
@@ -37,6 +45,7 @@ export default function DeepScreen() {
   const [noModel, setNoModel] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const embedIdRef = useRef<string>('');
+  const ragWorkspaceRef = useRef<string>('');
   const currentRunRef = useRef<any>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
@@ -52,6 +61,10 @@ export default function DeepScreen() {
       if (embedIdRef.current) {
         unloadModel({ modelId: embedIdRef.current }).catch(() => {});
         embedIdRef.current = '';
+      }
+      if (ragWorkspaceRef.current) {
+        closeRagWorkspace(ragWorkspaceRef.current).catch(() => {});
+        ragWorkspaceRef.current = '';
       }
     };
   }, []);
@@ -94,7 +107,6 @@ export default function DeepScreen() {
 
     setPhase('ingesting');
     try {
-      // Copy to stable documents dir before reading
       const docsDir = new Directory(Paths.document, 'peek', 'deep');
       docsDir.create({ intermediates: true, idempotent: true });
       const destFile = new File(docsDir, `doc_${Date.now()}_${asset.name}`);
@@ -109,13 +121,22 @@ export default function DeepScreen() {
 
       const truncated = content.slice(0, 20000);
 
-      // Load embedding model + ingest
+      if (ragWorkspaceRef.current) {
+        await closeRagWorkspace(ragWorkspaceRef.current).catch(() => {});
+        ragWorkspaceRef.current = '';
+      }
+      if (embedIdRef.current) {
+        await unloadModel({ modelId: embedIdRef.current }).catch(() => {});
+        embedIdRef.current = '';
+      }
+      const workspace = newRagWorkspace();
+      ragWorkspaceRef.current = workspace;
       const embedId = await loadModel({ modelSrc: EMBEDDINGGEMMA_300M_Q8_0 });
       embedIdRef.current = embedId;
-      await ragIngestText(embedId, truncated);
+      await ragIngestText(embedId, truncated, workspace);
 
       setSourceTitle(asset.name ?? 'Document');
-      setMessages([{ role: 'assistant', text: `Ready. I've read "${asset.name ?? 'your document'}". Ask me anything about it.` }]);
+      setMessages([{ id: 'init', role: 'assistant', text: `Ready. I've read "${asset.name ?? 'your document'}". Ask me anything about it.` }]);
       setPhase('ready');
     } catch (e: any) {
       setPhase('idle');
@@ -129,15 +150,17 @@ export default function DeepScreen() {
     if (!llmModelId) { Alert.alert('No model', 'Download a model from the Models screen first.'); return; }
 
     setQuestion('');
-    const newMessages: Message[] = [...messages, { role: 'user', text: q }];
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', text: q };
+    const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setPhase('thinking');
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
-    try {
-      const docs = await ragQuery(embedIdRef.current, q, 5);
-      const ctx = buildRagContext(docs);
+    const placeholderId = 'ai-' + Date.now();
 
+    try {
+      const docs = await ragQuery(embedIdRef.current, q, 5, ragWorkspaceRef.current);
+      const ctx = buildRagContext(docs);
       const sysPrompt = `${SYSTEM_PROMPTS.deep}\n\n${ctx}`;
 
       const msgs = [
@@ -145,32 +168,47 @@ export default function DeepScreen() {
         ...newMessages.map(m => ({ role: m.role, content: m.text })),
       ];
 
+      const aiMsg: Message = { id: placeholderId, role: 'assistant', text: '', sources: docs.length > 0 ? docs : undefined };
+      setMessages([...newMessages, aiMsg]);
+
       let full = '';
-      const run = completion({ modelId: llmModelId, history: msgs, stream: true });
+      const run = completion({
+        modelId: llmModelId, history: msgs, stream: true,
+        captureThinking: true,
+        generationParams: { predict: 500, temp: 0.4, top_k: 30 },
+      });
       currentRunRef.current = run;
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') {
           full += (ev as any).text;
-          setMessages([...newMessages, { role: 'assistant', text: full }]);
-          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 0);
+          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: full } : m));
+          scrollRef.current?.scrollToEnd({ animated: false });
         }
       }
       currentRunRef.current = null;
 
-      setMessages([...newMessages, { role: 'assistant', text: full.trim() || 'No response.' }]);
+      const finalText = full.trim() || 'No response.';
+      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: finalText } : m));
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e) {
       if (!(e instanceof InferenceCancelledError)) {
-        setMessages([...newMessages, { role: 'assistant', text: 'Something went wrong. Try again.' }]);
+        setMessages(prev => prev.map(m => m.id === placeholderId
+          ? { ...m, text: 'Something went wrong. Try again.' }
+          : m));
       }
     } finally {
       setPhase('ready');
     }
   };
 
+  const toggleSources = (id: string) => {
+    setMessages(prev => prev.map(m => m.id === id ? { ...m, showSources: !m.showSources } : m));
+  };
+
   const reset = () => { setPhase('idle'); setMessages([]); setSourceTitle(''); };
 
   const isBusy = phase === 'ingesting' || phase === 'thinking';
+  const inputBarPadBot = Math.max(insets.bottom, 12);
 
   return (
     <Animated.View style={[styles.container, { backgroundColor: theme.background, opacity: fadeAnim }]}>
@@ -239,12 +277,12 @@ export default function DeepScreen() {
       ) : (
         <KeyboardAvoidingView
           style={styles.keyboardFlex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior="padding"
           keyboardVerticalOffset={0}
         >
           <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            {messages.map((msg, i) => (
-              <View key={i} style={[styles.turn, msg.role === 'user' ? styles.turnRight : styles.turnLeft]}>
+            {messages.map((msg) => (
+              <View key={msg.id} style={[styles.turn, msg.role === 'user' ? styles.turnRight : styles.turnLeft]}>
                 <View style={[
                   styles.bubble,
                   msg.role === 'user'
@@ -257,6 +295,29 @@ export default function DeepScreen() {
                     <Text selectable style={[styles.bubbleText, { color: theme.accentFg }]}>{msg.text}</Text>
                   )}
                 </View>
+                {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 ? (
+                  <>
+                    <TouchableOpacity
+                      style={[styles.sourcesToggle, { borderColor: theme.border }]}
+                      onPress={() => toggleSources(msg.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.sourcesToggleText, { color: theme.textSecondary }]}>
+                        {msg.showSources ? '▼ Hide sources' : `▶ ${msg.sources.length} source${msg.sources.length > 1 ? 's' : ''}`}
+                      </Text>
+                    </TouchableOpacity>
+                    {msg.showSources && (
+                      <View style={[styles.sourcesBox, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
+                        {msg.sources.map((src, si) => (
+                          <View key={si} style={styles.sourceItem}>
+                            <Text style={[styles.sourceNum, { color: theme.accent }]}>[{si + 1}]</Text>
+                            <Text selectable style={[styles.sourceText, { color: theme.textSecondary }]}>{src.slice(0, 300)}{src.length > 300 ? '…' : ''}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </>
+                ) : null}
                 {msg.role === 'assistant' && msg.text ? (
                   <View style={styles.bubbleActions}>
                     <CopyButton text={msg.text} color={theme.textSecondary} size={11} />
@@ -264,7 +325,7 @@ export default function DeepScreen() {
                 ) : null}
               </View>
             ))}
-            {phase === 'thinking' && (
+            {phase === 'thinking' && messages[messages.length - 1]?.role !== 'assistant' && (
               <View style={[styles.turn, styles.turnLeft]}>
                 <View style={[styles.bubble, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1, borderBottomLeftRadius: 4 }]}>
                   <ThinkingDots color={theme.accent} />
@@ -274,7 +335,7 @@ export default function DeepScreen() {
             <View style={{ height: 20 }} />
           </ScrollView>
 
-          <View style={[styles.inputBar, { borderTopColor: theme.border, backgroundColor: theme.background }]}>
+          <View style={[styles.inputBar, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: inputBarPadBot }]}>
             <TextInput
               style={[styles.questionInput, { backgroundColor: theme.card, color: theme.text }]}
               value={question}
@@ -365,9 +426,15 @@ const styles = StyleSheet.create({
   bubbleActions: { flexDirection: 'row', paddingHorizontal: 4 },
   bubble: { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12 },
   bubbleText: { fontSize: 15, lineHeight: 22 },
+  sourcesToggle: { alignSelf: 'flex-start', borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5 },
+  sourcesToggleText: { fontSize: 11, fontWeight: '600' },
+  sourcesBox: { borderRadius: 12, borderWidth: 1, padding: 12, gap: 8 },
+  sourceItem: { flexDirection: 'row', gap: 6 },
+  sourceNum: { fontSize: 12, fontWeight: '700', minWidth: 20 },
+  sourceText: { flex: 1, fontSize: 12, lineHeight: 18 },
   inputBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 16, paddingVertical: 12, paddingBottom: 28, borderTopWidth: 1,
+    paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1,
   },
   questionInput: { flex: 1, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15 },
   sendBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },

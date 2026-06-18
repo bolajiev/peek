@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform, Animated, Keyboard,
+  ScrollView, KeyboardAvoidingView, Animated, Keyboard,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
@@ -22,6 +23,9 @@ export default function QuickChatScreen() {
   const preselectedModelId: string | undefined = route.params?.modelId;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
+  const insets = useSafeAreaInsets();
+  const inputPadBot = useRef(new Animated.Value(0)).current;
+  const insetBottomRef = useRef(0);
 
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -37,12 +41,22 @@ export default function QuickChatScreen() {
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
+    insetBottomRef.current = insets.bottom;
+    inputPadBot.setValue(Math.max(insets.bottom, 8));
+  }, [insets.bottom]);
+
+  useEffect(() => {
     loadOnMount();
-    const sub = Keyboard.addListener('keyboardDidShow', () => {
+    const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
+      Animated.timing(inputPadBot, { toValue: 8, duration: e.duration || 250, useNativeDriver: false }).start();
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      Animated.timing(inputPadBot, { toValue: Math.max(insetBottomRef.current, 8), duration: 200, useNativeDriver: false }).start();
+    });
     return () => {
-      sub.remove();
+      showSub.remove();
+      hideSub.remove();
       if (runRef.current) cancel({ requestId: runRef.current.requestId }).catch(() => {});
     };
   }, []);
@@ -173,7 +187,7 @@ export default function QuickChatScreen() {
 
       <KeyboardAvoidingView
         style={styles.keyboardFlex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         keyboardVerticalOffset={0}
       >
         {/* Messages */}
@@ -220,7 +234,7 @@ export default function QuickChatScreen() {
 
         {/* Input */}
         {!noModel && (
-          <View style={[styles.inputWrap, { borderTopColor: theme.border }]}>
+          <Animated.View style={[styles.inputWrap, { borderTopColor: theme.border, paddingBottom: inputPadBot }]}>
             <TextInput
               style={[styles.input, { backgroundColor: theme.cardAlt, borderColor: theme.border, color: theme.text }]}
               placeholder={loading ? 'Loading model...' : 'Message Peek...'}
@@ -252,7 +266,7 @@ export default function QuickChatScreen() {
                 <IconSend size={16} color={canSend ? theme.accentFg : theme.textSecondary} />
               </TouchableOpacity>
             )}
-          </View>
+          </Animated.View>
         )}
       </KeyboardAvoidingView>
     </View>
@@ -290,7 +304,7 @@ const styles = StyleSheet.create({
   bubbleText: { fontSize: 14, lineHeight: 21 },
   inputWrap: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 10,
-    padding: 12, paddingBottom: 32, borderTopWidth: 1,
+    padding: 12, borderTopWidth: 1,
   },
   input: {
     flex: 1, borderRadius: 20, borderWidth: 1,

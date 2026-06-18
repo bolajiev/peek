@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated,
-  Dimensions, PanResponder,
+  Dimensions,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getTheme } from '../theme';
@@ -13,12 +13,12 @@ import { syncModelsFromDisk } from '../utils/storage';
 import { MODEL_KEYS } from '../utils/models';
 import { DownloadedModel } from '../types';
 
-const { width: SW, height: SH } = Dimensions.get('window');
+const { width: SW } = Dimensions.get('window');
 const H_PAD = 12;
 const CARD_GAP = 10;
 const CARD_W = (SW - H_PAD * 2 - CARD_GAP) / 2;
 
-type ModuleKey = 'Lens' | 'Voice' | 'Scribe' | 'Deep' | 'QuickChat' | 'Relay';
+type ModuleKey = 'Lens' | 'Voice' | 'Scribe' | 'Deep' | 'Relay';
 
 interface Module {
   id: ModuleKey;
@@ -32,6 +32,9 @@ interface Module {
   requiresBoth?: boolean; // vision: requires main + mmproj
 }
 
+// 'any-text' means: any downloaded text model satisfies this module.
+const TEXT_MODEL_KEY = 'any-text';
+
 const MODULES: Module[] = [
   {
     id: 'Lens', screen: 'Lens', label: 'Vision AI', title: 'Peek Lens',
@@ -44,26 +47,18 @@ const MODULES: Module[] = [
     id: 'Voice', screen: 'Voice', label: 'Whisper · Built-in', title: 'Peek Voice',
     desc: 'Record or upload audio — transcribe & summarize',
     icon: (c) => <IconVoice size={20} color={c} />,
-    // Whisper is always available (descriptor model); text summary needs text-fast
-    // but Voice handles its own download prompt internally — no lifecycle gate
   },
   {
-    id: 'Scribe', screen: 'Scribe', label: 'MedPsy', title: 'Peek Scribe',
+    id: 'Scribe', screen: 'Scribe', label: 'AI Model', title: 'Peek Scribe',
     desc: 'Draft documents, meal plans, and notes',
     icon: (c) => <IconScribe size={20} color={c} />,
-    modelKey: MODEL_KEYS.TEXT_HEALTH,
+    modelKey: TEXT_MODEL_KEY,
   },
   {
-    id: 'Deep', screen: 'Deep', label: 'MedPsy', title: 'Peek Deep',
+    id: 'Deep', screen: 'Deep', label: 'AI Model', title: 'Peek Deep',
     desc: 'Research documents privately on-device',
     icon: (c) => <IconDeep size={20} color={c} />,
-    modelKey: MODEL_KEYS.TEXT_HEALTH,
-  },
-  {
-    id: 'QuickChat', screen: 'QuickChat', label: 'MedPsy', title: 'Quick Chat',
-    desc: 'Ask anything — fast, private, on-device',
-    icon: (c) => <IconScribe size={20} color={c} />,
-    modelKey: MODEL_KEYS.TEXT_HEALTH,
+    modelKey: TEXT_MODEL_KEY,
   },
   {
     id: 'Relay', screen: 'Relay', label: 'P2P · Coming Soon', title: 'Peek Relay',
@@ -82,44 +77,7 @@ export default function HomeScreen() {
   const { open: openSidebar } = useSidebar();
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
   const [downloadedModels, setDownloadedModels] = useState<DownloadedModel[]>([]);
-
-  // FAB drag state
-  const [fabPos, setFabPos] = useState({ x: 20, y: SH - 120 });
-  const fabPosRef = useRef({ x: 20, y: SH - 120 });
-  const fabTranslate = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-  const isDragging = useRef(false);
-  const dragStart = useRef({ x: 0, y: 0 });
-
-  const panResponder = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onPanResponderGrant: (e) => {
-      isDragging.current = false;
-      dragStart.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
-      fabTranslate.setValue({ x: 0, y: 0 });
-    },
-    onPanResponderMove: (e) => {
-      const dx = e.nativeEvent.pageX - dragStart.current.x;
-      const dy = e.nativeEvent.pageY - dragStart.current.y;
-      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) isDragging.current = true;
-      fabTranslate.setValue({ x: dx, y: dy });
-    },
-    onPanResponderRelease: (e, g) => {
-      if (!isDragging.current) {
-        fabTranslate.setValue({ x: 0, y: 0 });
-        handleFabTap();
-      } else {
-        const newPos = {
-          x: Math.max(12, Math.min(fabPosRef.current.x + g.dx, SW - 180)),
-          y: Math.max(60, Math.min(fabPosRef.current.y + g.dy, SH - 100)),
-        };
-        fabPosRef.current = newPos;
-        setFabPos(newPos);
-        fabTranslate.setValue({ x: 0, y: 0 });
-      }
-    },
-  })).current;
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }).start();
@@ -129,16 +87,28 @@ export default function HomeScreen() {
   useFocusEffect(useCallback(() => {
     syncModelsFromDisk().then(models => {
       setDownloadedModels(models);
-      setDownloadedIds(new Set(models.map(m => m.id)));
     }).catch(() => {});
   }, []));
 
+  const bestTextModel = (): DownloadedModel | undefined =>
+    downloadedModels.find(m => m.id === MODEL_KEYS.TEXT_HEALTH)
+    ?? downloadedModels.find(m => m.modelType === 'text');
+
   const getStatus = (mod: Module): ModelStatus => {
-    if (!mod.modelKey) return 'ready'; // no model needed (Voice, Relay)
+    if (!mod.modelKey) return 'ready';
+    if (mod.modelKey === TEXT_MODEL_KEY) {
+      return bestTextModel() ? 'ready' : 'needs-download';
+    }
     const dm = downloadedModels.find(m => m.id === mod.modelKey);
     if (!dm) return 'needs-download';
     if (mod.requiresBoth && !dm.projectionModelSrc) return 'needs-download';
     return 'ready';
+  };
+
+  const getModuleLabel = (mod: Module): string => {
+    if (mod.modelKey !== TEXT_MODEL_KEY) return mod.label;
+    const tm = bestTextModel();
+    return tm ? tm.name : 'No model';
   };
 
   const enterModule = async (mod: Module) => {
@@ -147,9 +117,12 @@ export default function HomeScreen() {
       return;
     }
     const status = getStatus(mod);
-    if (status === 'needs-download' && mod.modelKey) {
+    if (status === 'needs-download') {
+      const downloadId = mod.modelKey === TEXT_MODEL_KEY
+        ? MODEL_KEYS.TEXT_HEALTH
+        : mod.modelKey!;
       navigation.navigate('Download', {
-        modelId: mod.modelKey,
+        modelId: downloadId,
         returnTo: mod.screen,
         returnParams: {},
       });
@@ -158,20 +131,7 @@ export default function HomeScreen() {
     navigation.navigate(mod.screen);
   };
 
-  const handleFabTap = () => {
-    const status = getStatus(MODULES.find(m => m.id === 'QuickChat')!);
-    if (status === 'needs-download') {
-      navigation.navigate('Download', {
-        modelId: MODEL_KEYS.TEXT_FAST,
-        returnTo: 'QuickChat',
-        returnParams: {},
-      });
-    } else {
-      navigation.navigate('QuickChat');
-    }
-  };
-
-  const grid = MODULES.filter(m => !m.fullWidth && m.id !== 'QuickChat');
+  const grid = MODULES.filter(m => !m.fullWidth);
   const full = MODULES.filter(m => m.fullWidth);
 
   const statusBadge = (mod: Module) => {
@@ -221,7 +181,7 @@ export default function HomeScreen() {
               <View style={[styles.cardIcon, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
                 {mod.icon(theme.text)}
               </View>
-              <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>{mod.label}</Text>
+              <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>{getModuleLabel(mod)}</Text>
               <Text style={[styles.cardTitle, { color: theme.text }]}>{mod.title}</Text>
               <Text style={[styles.cardDesc, { color: theme.textSecondary }]} numberOfLines={2}>{mod.desc}</Text>
               {mod.modelKey ? statusBadge(mod) : null}
@@ -251,31 +211,8 @@ export default function HomeScreen() {
           </TouchableOpacity>
         ))}
 
-        <View style={{ height: 120 }} />
+        <View style={{ height: 32 }} />
       </ScrollView>
-
-      {/* Draggable FAB — Quick Chat */}
-      <Animated.View
-        style={[
-          styles.fab,
-          {
-            backgroundColor: theme.card,
-            borderColor: theme.border,
-            left: fabPos.x,
-            top: fabPos.y,
-            transform: fabTranslate.getTranslateTransform(),
-          },
-        ]}
-        {...panResponder.panHandlers}
-      >
-        <View style={[styles.fabPulse, { backgroundColor: theme.accent, shadowColor: theme.accent }]} />
-        <View>
-          <Text style={[styles.fabLabel, { color: theme.text }]}>Quick Chat</Text>
-          <Text style={[styles.fabSub, { color: theme.textSecondary }]}>
-            {getStatus(MODULES.find(m => m.id === 'QuickChat')!) === 'ready' ? 'on-device · ready' : 'tap to download'}
-          </Text>
-        </View>
-      </Animated.View>
     </Animated.View>
   );
 }
@@ -323,18 +260,4 @@ const styles = StyleSheet.create({
   statusPillText: { fontSize: 9, fontWeight: '600', letterSpacing: 0.3 },
   betaBadge: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
   betaText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
-  fab: {
-    position: 'absolute',
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderWidth: 1, borderRadius: 50,
-    paddingVertical: 12, paddingHorizontal: 18,
-    shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 16, shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
-  },
-  fabPulse: {
-    width: 8, height: 8, borderRadius: 4,
-    shadowOpacity: 0.8, shadowRadius: 6, shadowOffset: { width: 0, height: 0 }, elevation: 4,
-  },
-  fabLabel: { fontSize: 13, fontWeight: '600' },
-  fabSub: { fontSize: 10, marginTop: 1 },
 });

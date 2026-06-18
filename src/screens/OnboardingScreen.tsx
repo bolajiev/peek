@@ -1,137 +1,158 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Animated,
-  Image,
+  View, Text, StyleSheet, TouchableOpacity,
+  ScrollView, Dimensions, Image, Animated,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { markOnboarded } from '../utils/storage';
 
-const FEATURES = [
-  {
-    icon: '🔒',
-    title: 'Fully Private',
-    body: 'AI runs on your phone. Photos never leave your device.',
-  },
-  {
-    icon: '📡',
-    title: 'Works Offline',
-    body: 'No internet needed after you download a model.',
-  },
-  {
-    icon: '⚡',
-    title: 'Instant Results',
-    body: 'Point, snap, and get analysis in seconds.',
-  },
-];
+const { width: SW } = Dimensions.get('window');
 
-const SCANS = [
-  { emoji: '🍎', label: 'Food' },
-  { emoji: '🌿', label: 'Plants' },
-  { emoji: '📄', label: 'Text' },
-  { emoji: '💊', label: 'Health' },
-  { emoji: '💻', label: 'Code' },
-  { emoji: '🔍', label: 'Objects' },
+const FEATURES = [
+  { emoji: '📷', title: 'Lens', desc: 'Scan food, labels, and images instantly' },
+  { emoji: '🎙️', title: 'Voice', desc: 'Transcribe and summarize any audio' },
+  { emoji: '✍️', title: 'Scribe', desc: 'Write, draft, and chat with AI' },
+  { emoji: '🔬', title: 'Deep', desc: 'Research your own files privately' },
 ];
 
 export default function OnboardingScreen() {
   const navigation = useNavigation<any>();
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
+  const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
+  const [page, setPage] = useState(0);
   const btnScale = useRef(new Animated.Value(1)).current;
+
+  const goNext = () => {
+    const next = page + 1;
+    scrollRef.current?.scrollTo({ x: SW * next, animated: true });
+    setPage(next);
+  };
 
   const handleGetStarted = async () => {
     Animated.sequence([
-      Animated.timing(btnScale, { toValue: 0.95, duration: 80, useNativeDriver: true }),
+      Animated.timing(btnScale, { toValue: 0.96, duration: 80, useNativeDriver: true }),
       Animated.timing(btnScale, { toValue: 1, duration: 80, useNativeDriver: true }),
     ]).start();
     await markOnboarded();
     navigation.replace('Main');
   };
 
+  const onScroll = (e: any) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / SW);
+    if (idx !== page) setPage(idx);
+  };
+
+  const topPad = Math.max(insets.top, 32);
+  const botPad = Math.max(insets.bottom, 20);
+
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <View style={[styles.root, { backgroundColor: theme.background }]}>
+      {/* Slides */}
       <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
+        ref={scrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={onScroll}
+        style={styles.pager}
+        bounces={false}
       >
-        {/* Hero */}
-        <View style={styles.hero}>
-          <Image
-            source={require('../../peeklogo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <Text style={[styles.appName, { color: theme.accent }]}>Peek</Text>
-          <Text style={[styles.tagline, { color: theme.text }]}>
-            AI that sees what you see
-          </Text>
-          <Text style={[styles.subTagline, { color: theme.textSecondary }]}>
-            Point your camera at anything and get instant AI-powered insights — all running privately on your phone.
-          </Text>
+        {/* ── Slide 1: Welcome ── */}
+        <View style={[styles.slide, { paddingTop: topPad }]}>
+          <View style={styles.s1Center}>
+            <Image
+              source={require('../../peeklogo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            <Text style={[styles.appName, { color: theme.accent }]}>Peek</Text>
+            <Text style={[styles.tagline, { color: theme.text }]}>
+              AI that runs on your phone.
+            </Text>
+            <Text style={[styles.sub, { color: theme.textSecondary }]}>
+              Private · Offline · Free
+            </Text>
+          </View>
         </View>
 
-        {/* Feature cards */}
-        <View style={styles.features}>
-          {FEATURES.map((f) => (
-            <View
-              key={f.title}
-              style={[styles.featureCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-            >
-              <Text style={styles.featureIcon}>{f.icon}</Text>
-              <Text style={[styles.featureTitle, { color: theme.text }]}>{f.title}</Text>
-              <Text style={[styles.featureBody, { color: theme.textSecondary }]}>{f.body}</Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Scan categories */}
-        <View style={[styles.scanSection, { borderColor: theme.border }]}>
-          <Text style={[styles.scanHeading, { color: theme.text }]}>
-            What can you scan?
+        {/* ── Slide 2: Features ── */}
+        <View style={[styles.slide, { paddingTop: topPad }]}>
+          <Text style={[styles.slideTitle, { color: theme.text }]}>What Peek does</Text>
+          <Text style={[styles.slideSub, { color: theme.textSecondary }]}>
+            Four powerful tools, all on-device
           </Text>
-          <View style={styles.scanGrid}>
-            {SCANS.map((s) => (
-              <View
-                key={s.label}
-                style={[styles.scanChip, { backgroundColor: theme.card, borderColor: theme.border }]}
-              >
-                <Text style={styles.scanEmoji}>{s.emoji}</Text>
-                <Text style={[styles.scanLabel, { color: theme.textSecondary }]}>{s.label}</Text>
+          <View style={styles.featureList}>
+            {FEATURES.map(f => (
+              <View key={f.title} style={[styles.featureRow, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <Text style={styles.featureEmoji}>{f.emoji}</Text>
+                <View style={styles.featureText}>
+                  <Text style={[styles.featureTitle, { color: theme.text }]}>{f.title}</Text>
+                  <Text style={[styles.featureDesc, { color: theme.textSecondary }]}>{f.desc}</Text>
+                </View>
               </View>
             ))}
           </View>
         </View>
 
-        {/* Privacy notice */}
-        <View style={[styles.privacyBanner, { backgroundColor: theme.accent + '12', borderColor: theme.accent + '40' }]}>
-          <Text style={[styles.privacyText, { color: theme.accent }]}>
-            👁️  Your photos are never uploaded. Everything stays on your device.
-          </Text>
+        {/* ── Slide 3: Privacy ── */}
+        <View style={[styles.slide, { paddingTop: topPad }]}>
+          <View style={styles.s3Center}>
+            <Text style={styles.lockEmoji}>🔒</Text>
+            <Text style={[styles.slideTitle, { color: theme.text }]}>Your data, your rules</Text>
+            <Text style={[styles.privacyLine, { color: theme.textSecondary }]}>
+              No cloud. No tracking.{'\n'}Nothing ever leaves your phone.
+            </Text>
+            <View style={[styles.downloadNote, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.downloadNoteText, { color: theme.textSecondary }]}>
+                You'll download one AI model to start — free and one-time.
+              </Text>
+            </View>
+          </View>
         </View>
       </ScrollView>
 
-      {/* Sticky CTA */}
-      <View style={[styles.cta, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
-        <Text style={[styles.ctaHint, { color: theme.textSecondary }]}>
-          You'll download one AI model to get started — free.
-        </Text>
+      {/* ── Footer: dots + button ── */}
+      <View style={[styles.footer, { paddingBottom: botPad, borderTopColor: theme.border }]}>
+        {/* Dot indicators */}
+        <View style={styles.dots}>
+          {[0, 1, 2].map(i => (
+            <View
+              key={i}
+              style={[
+                styles.dot,
+                i === page
+                  ? { backgroundColor: theme.accent, width: 20 }
+                  : { backgroundColor: theme.border, width: 7 },
+              ]}
+            />
+          ))}
+        </View>
+
+        {/* CTA button */}
         <Animated.View style={{ transform: [{ scale: btnScale }] }}>
-          <TouchableOpacity
-            style={[styles.ctaBtn, { backgroundColor: theme.accent }]}
-            onPress={handleGetStarted}
-            activeOpacity={0.9}
-          >
-            <Text style={[styles.ctaBtnText, { color: theme.background }]}>
-              Get Started  →
-            </Text>
-          </TouchableOpacity>
+          {page < 2 ? (
+            <TouchableOpacity
+              style={[styles.btn, { backgroundColor: theme.accent }]}
+              onPress={goNext}
+              activeOpacity={0.88}
+            >
+              <Text style={[styles.btnText, { color: theme.accentFg }]}>Next →</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.btn, { backgroundColor: theme.accent }]}
+              onPress={handleGetStarted}
+              activeOpacity={0.88}
+            >
+              <Text style={[styles.btnText, { color: theme.accentFg }]}>Get Started →</Text>
+            </TouchableOpacity>
+          )}
         </Animated.View>
       </View>
     </View>
@@ -139,100 +160,54 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scroll: { paddingBottom: 24 },
-  hero: {
-    alignItems: 'center',
-    paddingTop: 80,
-    paddingBottom: 40,
-    paddingHorizontal: 32,
-  },
-  logo: {
-    width: 110,
-    height: 110,
-    borderRadius: 28,
-  },
-  appName: {
-    fontSize: 52,
-    fontWeight: '900',
-    letterSpacing: 3,
-    marginTop: 20,
-  },
-  tagline: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  subTagline: {
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: 'center',
-    marginTop: 12,
-  },
-  features: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 10,
-    marginBottom: 28,
-  },
-  featureCard: {
+  root: { flex: 1 },
+  pager: { flex: 1 },
+
+  slide: {
+    width: SW,
     flex: 1,
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
-    alignItems: 'center',
-  },
-  featureIcon: { fontSize: 26, marginBottom: 8 },
-  featureTitle: { fontSize: 13, fontWeight: '700', textAlign: 'center', marginBottom: 4 },
-  featureBody: { fontSize: 11, textAlign: 'center', lineHeight: 15 },
-  scanSection: {
-    marginHorizontal: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 20,
-    marginBottom: 20,
-  },
-  scanHeading: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 14,
-    textAlign: 'center',
-  },
-  scanGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
+    paddingHorizontal: 32,
     justifyContent: 'center',
   },
-  scanChip: {
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    minWidth: 80,
+
+  // Slide 1
+  s1Center: { alignItems: 'center', gap: 12 },
+  logo: { width: 96, height: 96, borderRadius: 24 },
+  appName: { fontSize: 58, fontWeight: '900', letterSpacing: 2, marginTop: 8 },
+  tagline: { fontSize: 22, fontWeight: '700', textAlign: 'center', letterSpacing: -0.3 },
+  sub: { fontSize: 15, fontWeight: '500', textAlign: 'center', letterSpacing: 1 },
+
+  // Slide 2
+  slideTitle: { fontSize: 26, fontWeight: '800', letterSpacing: -0.4, marginBottom: 6, textAlign: 'center' },
+  slideSub: { fontSize: 14, textAlign: 'center', marginBottom: 28 },
+  featureList: { gap: 12 },
+  featureRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 16,
+    borderRadius: 16, borderWidth: 1, padding: 16,
   },
-  scanEmoji: { fontSize: 24, marginBottom: 4 },
-  scanLabel: { fontSize: 12, fontWeight: '600' },
-  privacyBanner: {
-    marginHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 14,
+  featureEmoji: { fontSize: 28 },
+  featureText: { flex: 1, gap: 2 },
+  featureTitle: { fontSize: 16, fontWeight: '700' },
+  featureDesc: { fontSize: 13, lineHeight: 18 },
+
+  // Slide 3
+  s3Center: { alignItems: 'center', gap: 16 },
+  lockEmoji: { fontSize: 56, marginBottom: 4 },
+  privacyLine: { fontSize: 17, lineHeight: 26, textAlign: 'center', fontWeight: '500' },
+  downloadNote: {
+    borderRadius: 14, borderWidth: 1, padding: 16, marginTop: 8,
   },
-  privacyText: { fontSize: 13, fontWeight: '600', lineHeight: 18, textAlign: 'center' },
-  cta: {
-    padding: 20,
-    paddingBottom: 44,
-    borderTopWidth: 1,
-    gap: 12,
+  downloadNoteText: { fontSize: 13, lineHeight: 19, textAlign: 'center' },
+
+  // Footer
+  footer: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    gap: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  ctaHint: { fontSize: 13, textAlign: 'center' },
-  ctaBtn: {
-    borderRadius: 16,
-    paddingVertical: 18,
-    alignItems: 'center',
-  },
-  ctaBtnText: { fontSize: 18, fontWeight: '800', letterSpacing: 0.5 },
+  dots: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  dot: { height: 7, borderRadius: 4 },
+  btn: { borderRadius: 16, paddingVertical: 18, alignItems: 'center' },
+  btnText: { fontSize: 17, fontWeight: '800', letterSpacing: 0.3 },
 });

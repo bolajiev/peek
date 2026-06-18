@@ -26,23 +26,18 @@ const DEFAULT_SETTINGS: AppSettings = {
   huggingFaceToken: '',
 };
 
-// On Android, save to external app storage (/Android/data/com.peek.app/files/)
-// so users can see files in a file manager. On iOS, use internal documents.
+// App-private document storage — no runtime permission required on any platform.
 export function getModelsDir(): Directory {
-  if (Platform.OS === 'android') {
-    return new Directory('file:///storage/emulated/0/Android/data/com.peek.app/files/peek/models');
-  }
-  return new Directory(Paths.document, 'peek', 'models');
-}
-
-// Internal storage dir — needed for migration only
-function getInternalModelsDir(): Directory {
   return new Directory(Paths.document, 'peek', 'models');
 }
 
 export async function initModelsDirectory(): Promise<void> {
   const dir = getModelsDir();
-  dir.create({ intermediates: true, idempotent: true });
+  try {
+    dir.create({ intermediates: true, idempotent: true });
+  } catch (e: any) {
+    throw new Error(`Failed to create models dir at ${dir.uri}: ${e?.message ?? e}`);
+  }
   try {
     await migrateOldModelFolders();
   } catch (e) {
@@ -67,35 +62,38 @@ function moveModelFiles(srcFolder: Directory, dstFolder: Directory): void {
 }
 
 async function migrateOldModelFolders(): Promise<void> {
-  const externalDir = getModelsDir();
-  const internalDir = getInternalModelsDir();
-  const isAndroid = Platform.OS === 'android';
+  const modelsDir = getModelsDir();
 
-  // All IDs we care about (old names + new names)
-  const allIds = [
+  // Old external path used before the permission-fix (Android only, best-effort).
+  const oldExternal = Platform.OS === 'android'
+    ? new Directory('file:///storage/emulated/0/Android/data/com.peek.app/files/peek/models')
+    : null;
+
+  const allIds = [...new Set([
     ...Object.keys(FOLDER_RENAMES),
     ...Object.values(FOLDER_RENAMES),
     'text-fast',
-  ];
+  ])];
 
-  for (const id of [...new Set(allIds)]) {
+  for (const id of allIds) {
     const targetId = FOLDER_RENAMES[id] ?? id;
-    const dstFolder = new Directory(externalDir, targetId);
-    const dstReady = new File(dstFolder, 'model.gguf').exists;
-    if (dstReady) continue;
+    const dstFolder = new Directory(modelsDir, targetId);
+    if (new File(dstFolder, 'model.gguf').exists) continue;
 
-    // Try: same location but old name
-    const srcSameLoc = new Directory(externalDir, id);
+    // Same dir, old folder name
+    const srcSameLoc = new Directory(modelsDir, id);
     if (srcSameLoc.exists) {
       try { moveModelFiles(srcSameLoc, dstFolder); } catch {}
       continue;
     }
 
-    // On Android: try internal storage (pre-external-storage fix) with old or new name
-    if (isAndroid) {
-      const srcInternal = new Directory(internalDir, id);
-      if (srcInternal.exists) {
-        try { moveModelFiles(srcInternal, dstFolder); } catch {}
+    // Old external path (Android only, swallowed on permission failure)
+    if (oldExternal) {
+      for (const oldId of [...new Set([id, targetId])]) {
+        try {
+          const srcExt = new Directory(oldExternal, oldId);
+          if (srcExt.exists) { moveModelFiles(srcExt, dstFolder); break; }
+        } catch {}
       }
     }
   }
@@ -411,5 +409,35 @@ export async function updateLastMessage(convId: string, content: string): Promis
 
 export function createConversationId(): string {
   return `conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+// ── Lens scan history ─────────────────────────────────────────────────────────
+
+const LENS_HISTORY_KEY = '@peek_lens_history';
+
+export interface LensScanRecord {
+  id: string;
+  imagePath?: string;
+  query: string;
+  text: string;
+  modelName?: string;
+  inferenceMs?: number;
+  createdAt: string;
+}
+
+export async function saveLensScan(record: LensScanRecord): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(LENS_HISTORY_KEY);
+    const list: LensScanRecord[] = raw ? JSON.parse(raw) : [];
+    list.unshift(record);
+    await AsyncStorage.setItem(LENS_HISTORY_KEY, JSON.stringify(list.slice(0, 50)));
+  } catch {}
+}
+
+export async function getLensHistory(): Promise<LensScanRecord[]> {
+  try {
+    const raw = await AsyncStorage.getItem(LENS_HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
 }
 

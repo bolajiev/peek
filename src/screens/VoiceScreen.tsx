@@ -4,13 +4,13 @@ import {
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
-import { transcribe, completion, InferenceCancelledError } from '@qvac/sdk';
+import { transcribeStream, completion, InferenceCancelledError } from '@qvac/sdk';
 import { whisperManager, llmManager } from '../utils/modelManager';
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getDownloadedModels, getSettings, toPath, syncModelsFromDisk } from '../utils/storage';
-import { isTextModel, SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS } from '../utils/models';
+import { getSettings, toPath, syncModelsFromDisk } from '../utils/storage';
+import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
 import { Paths, File, Directory } from 'expo-file-system';
 import { IconVoice, IconUpload, IconMic, IconBack } from '../components/Icons';
 import MarkdownText from '../components/MarkdownText';
@@ -28,16 +28,22 @@ export default function VoiceScreen() {
   const [summary, setSummary] = useState('');
   const [initError, setInitError] = useState<string | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [transcribeElapsed, setTranscribeElapsed] = useState(0);
+  const [whisperReady, setWhisperReady] = useState(false);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const recordingRef = useRef<Audio.Recording | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const transcribeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }).start();
-    whisperManager.ensure().catch(() => {});
-    return () => { cleanupRecording(); };
+    whisperManager.ensure()
+      .then(() => setWhisperReady(true))
+      .catch(() => {});
+    return () => { cleanupRecording(); stopTranscribeTimer(); };
   }, []);
 
   const cleanupRecording = async () => {
@@ -46,6 +52,10 @@ export default function VoiceScreen() {
       await recordingRef.current.stopAndUnloadAsync().catch(() => {});
       recordingRef.current = null;
     }
+  };
+
+  const stopTranscribeTimer = () => {
+    if (transcribeTimerRef.current) { clearInterval(transcribeTimerRef.current); transcribeTimerRef.current = null; }
   };
 
   const startPulse = () => {
@@ -99,10 +109,7 @@ export default function VoiceScreen() {
   };
 
   const handleUpload = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: 'audio/*',
-      copyToCacheDirectory: true,
-    });
+    const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
     if (result.canceled || !result.assets?.[0]) return;
     const picked = result.assets[0];
     try {
@@ -122,34 +129,48 @@ export default function VoiceScreen() {
     setPhase('transcribing');
     setTranscript('');
     setSummary('');
+    setTranscribeElapsed(0);
+    transcribeTimerRef.current = setInterval(() => setTranscribeElapsed(t => t + 1), 1000);
     try {
       const wId = await whisperManager.ensure();
-      const text: string = await transcribe({
-        modelId: wId,
-        audioChunk: toPath(uri),
-      });
-      setTranscript(text.trim() || '(No speech detected)');
-      setPhase('transcript');
+      let text = '';
+      let firstChunk = true;
+      const gen = transcribeStream({ modelId: wId, audioChunk: toPath(uri) });
+      for await (const chunk of gen) {
+        text += chunk;
+        if (firstChunk) {
+          firstChunk = false;
+          setPhase('transcript');
+        }
+        setTranscript(text);
+      }
+      if (!text.trim()) {
+        setTranscript('(No speech detected)');
+        setPhase('transcript');
+      }
     } catch (err: any) {
       setInitError(err?.message || 'Transcription failed');
       setPhase('idle');
+    } finally {
+      stopTranscribeTimer();
     }
   };
 
   const handleSummarize = async () => {
     if (!transcript) return;
     setPhase('summarizing');
+    setSummary('');
     try {
-      // Always use text-fast; download if missing
       const synced = await syncModelsFromDisk();
-      const fastModel = synced.find(m => m.id === MODEL_KEYS.TEXT_HEALTH)
+      const textModel = synced.find(m => m.id === MODEL_KEYS.TEXT_HEALTH)
         ?? synced.find(m => m.id === MODEL_KEYS.TEXT_FAST)
         ?? synced.find(m => m.modelType === 'text');
-      if (!fastModel) {
+
+      if (!textModel) {
         setPhase('transcript');
         Alert.alert(
-          'Model needed',
-          'Download MedPsy to summarize.',
+          'Text model needed',
+          'Download a text model (MedPsy or Qwen 2.5) to use AI summarization.',
           [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Download', onPress: () => navigation.navigate('Download', { modelId: MODEL_KEYS.TEXT_HEALTH, returnTo: 'Voice', returnParams: {} }) },
@@ -157,10 +178,13 @@ export default function VoiceScreen() {
         );
         return;
       }
+
       const settings = await getSettings();
       const modelConfig: any = { ctx_size: 1024, device: settings.accelerator === 'gpu' ? 'gpu' : 'cpu' };
-      const mid = await llmManager.ensure(fastModel, modelConfig);
+      const mid = await llmManager.ensure(textModel, modelConfig);
+
       let out = '';
+      let firstToken = true;
       const run = completion({
         modelId: mid,
         history: [
@@ -168,12 +192,20 @@ export default function VoiceScreen() {
           { role: 'user', content: transcript },
         ],
         stream: true,
+        generationParams: { predict: 350, temp: 0.3, top_k: 20 },
       });
+
       for await (const ev of run.events) {
-        if ((ev as any).type === 'contentDelta') out += (ev as any).text;
+        if ((ev as any).type === 'contentDelta') {
+          out += (ev as any).text;
+          if (firstToken) {
+            firstToken = false;
+            setPhase('transcript'); // show transcript view immediately when streaming starts
+          }
+          setSummary(out + '▍');
+        }
       }
       setSummary(out.trim() || "Couldn't summarize. Transcript is still saved.");
-      setPhase('transcript');
     } catch (e) {
       if (!(e instanceof InferenceCancelledError)) setSummary("Couldn't summarize. Transcript is still saved.");
       setPhase('transcript');
@@ -183,6 +215,8 @@ export default function VoiceScreen() {
   const reset = () => {
     setTranscript(''); setSummary(''); setInitError(null); setPhase('idle');
   };
+
+  const wordCount = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
   const fmtTime = (s: number) =>
     `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
@@ -220,7 +254,6 @@ export default function VoiceScreen() {
           </View>
 
           <View style={styles.body}>
-            {/* PRIMARY — Record Now (yellow) */}
             <TouchableOpacity
               style={[styles.primaryAction, { backgroundColor: theme.accent }]}
               onPress={handleRecord}
@@ -231,11 +264,13 @@ export default function VoiceScreen() {
               </View>
               <View style={styles.actionText}>
                 <Text style={[styles.actionTitle, { color: theme.accentFg }]}>Record Now</Text>
-                <Text style={[styles.actionSub, { color: theme.accentFg + 'BB' }]}>Transcribe on-device with Whisper</Text>
+                <Text style={[styles.actionSub, { color: theme.accentFg + 'BB' }]}>
+                  {whisperReady ? 'Whisper ready · tap to start' : 'Loading Whisper model…'}
+                </Text>
               </View>
+              {whisperReady && <View style={[styles.readyDot, { backgroundColor: theme.accentFg }]} />}
             </TouchableOpacity>
 
-            {/* SECONDARY — Upload (outline) */}
             <TouchableOpacity
               style={[styles.secondaryAction, { backgroundColor: theme.card, borderColor: theme.border }]}
               onPress={handleUpload}
@@ -276,11 +311,13 @@ export default function VoiceScreen() {
         <View style={styles.centeredPane}>
           <ThinkDots color={theme.accent} />
           <Text style={[styles.spinLabel, { color: theme.text }]}>Transcribing…</Text>
-          <Text style={[styles.spinSub, { color: theme.textSecondary }]}>Running Whisper on-device</Text>
+          <Text style={[styles.spinSub, { color: theme.textSecondary }]}>
+            Whisper on-device · {fmtTime(transcribeElapsed)}
+          </Text>
         </View>
       )}
 
-      {/* ── Summarizing ── */}
+      {/* ── Summarizing (waiting for first token) ── */}
       {phase === 'summarizing' && (
         <View style={styles.centeredPane}>
           <ThinkDots color={theme.accent} />
@@ -288,25 +325,43 @@ export default function VoiceScreen() {
         </View>
       )}
 
-      {/* ── Transcript ── */}
+      {/* ── Transcript (+ streaming summary) ── */}
       {phase === 'transcript' && (
         <ScrollView style={styles.resultScroll} contentContainerStyle={styles.resultContent} showsVerticalScrollIndicator={false}>
           <View style={styles.sectionRow}>
             <Text style={[styles.sectionHead, { color: theme.textSecondary }]}>TRANSCRIPT</Text>
-            <CopyButton text={transcript} color={theme.textSecondary} size={11} />
+            <View style={styles.sectionActions}>
+              <Text style={[styles.wordCountText, { color: theme.textSecondary }]}>
+                {wordCount(transcript)} words
+              </Text>
+              <CopyButton text={transcript} color={theme.textSecondary} size={11} />
+            </View>
           </View>
           <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <Text selectable style={[styles.resultText, { color: theme.text }]}>{transcript}</Text>
           </View>
 
+          {/* Continue in Chat */}
+          <TouchableOpacity
+            style={[styles.chatBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+            onPress={() => navigation.navigate('Scribe', { mode: 'document', seedQuery: `Transcript:\n\n${transcript}` })}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.chatBtnText, { color: theme.accent }]}>Continue in Chat →</Text>
+          </TouchableOpacity>
+
           {summary ? (
             <>
               <View style={[styles.sectionRow, { marginTop: 20 }]}>
                 <Text style={[styles.sectionHead, { color: theme.textSecondary }]}>SUMMARY</Text>
-                <CopyButton text={summary} color={theme.textSecondary} size={11} />
+                {!summary.endsWith('▍') && <CopyButton text={summary} color={theme.textSecondary} size={11} />}
               </View>
               <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <MarkdownText color={theme.text} fontSize={15} lineHeight={23}>{summary}</MarkdownText>
+                {summary.endsWith('▍') ? (
+                  <Text style={[styles.resultText, { color: theme.text }]}>{summary}</Text>
+                ) : (
+                  <MarkdownText color={theme.text} fontSize={15} lineHeight={23}>{summary}</MarkdownText>
+                )}
               </View>
             </>
           ) : (
@@ -379,6 +434,7 @@ const styles = StyleSheet.create({
     width: 42, height: 42, borderRadius: 12,
     justifyContent: 'center', alignItems: 'center', flexShrink: 0,
   },
+  readyDot: { width: 7, height: 7, borderRadius: 3.5, opacity: 0.8 },
   secondaryAction: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     borderRadius: 14, borderWidth: 1, padding: 16,
@@ -405,9 +461,16 @@ const styles = StyleSheet.create({
   resultScroll: { flex: 1 },
   resultContent: { padding: 20, gap: 8 },
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  sectionActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   sectionHead: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase' },
+  wordCountText: { fontSize: 10, fontWeight: '500' },
   resultBox: { borderRadius: 14, borderWidth: 1, padding: 16 },
   resultText: { fontSize: 15, lineHeight: 23 },
+  chatBtn: {
+    borderWidth: 1, borderRadius: 14, paddingVertical: 12,
+    alignItems: 'center', marginTop: 8,
+  },
+  chatBtnText: { fontSize: 14, fontWeight: '700' },
   summarizeBtn: {
     borderWidth: 1, borderRadius: 14, paddingVertical: 14,
     alignItems: 'center', marginTop: 12,

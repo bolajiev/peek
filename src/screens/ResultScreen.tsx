@@ -5,6 +5,7 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
+import { saveLensScan } from '../utils/storage';
 
 interface RouteParams {
   text: string;
@@ -33,15 +34,24 @@ export default function ResultScreen() {
       Animated.timing(fade, { toValue: 1, duration: 280, useNativeDriver: true }),
       Animated.spring(imageScale, { toValue: 1, tension: 80, friction: 10, useNativeDriver: true }),
     ]).start();
+    if (params.text && !params.error) {
+      saveLensScan({
+        id: Date.now().toString(),
+        imagePath: params.imagePath,
+        query: params.query || 'What is this?',
+        text: params.text,
+        modelName: params.modelName,
+        inferenceMs: params.inferenceMs,
+        createdAt: new Date().toISOString(),
+      });
+    }
   }, []);
 
   const continueInChat = () => {
-    // Seed ScribeChat with the scan result so the user can ask follow-up questions
-    navigation.navigate('ScribeChat', {
+    navigation.navigate('Scribe', {
       mode: 'chat',
-      seedQuery: params.query,
+      seedQuery: params.query ? `Re: "${params.query}"` : undefined,
       seedAnswer: params.text,
-      seedImage: params.imagePath,
     });
   };
 

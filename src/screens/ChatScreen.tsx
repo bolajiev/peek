@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, Animated, KeyboardAvoidingView, Platform,
+  ScrollView, Animated, KeyboardAvoidingView,
   Image, Keyboard,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
@@ -18,8 +19,11 @@ import {
 } from '../utils/storage';
 import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
 import { DownloadedModel, Conversation, ChatMessage } from '../types';
+import { saveMarkdownFile } from '../utils/fileService';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
+
+interface GeneratedFile { name: string; path: string; }
 
 interface Message {
   id: string;
@@ -27,6 +31,9 @@ interface Message {
   text: string;
   imagePath?: string;
   streaming?: boolean;
+  thinking?: string;
+  showThinking?: boolean;
+  generatedFile?: GeneratedFile;
 }
 
 const SYSTEM_CHAT = SYSTEM_PROMPTS.chat;
@@ -46,6 +53,9 @@ export default function ChatScreen() {
   const SYSTEM_PROMPT = mode === 'document' ? SYSTEM_DOC : SYSTEM_CHAT;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
+  const insets = useSafeAreaInsets();
+  const inputPadBot = useRef(new Animated.Value(0)).current;
+  const insetBottomRef = useRef(0);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -63,6 +73,11 @@ export default function ChatScreen() {
   const convIdRef = useRef<string>(resumeConvId ?? createConversationId());
 
   useEffect(() => {
+    insetBottomRef.current = insets.bottom;
+    inputPadBot.setValue(Math.max(insets.bottom, 8));
+  }, [insets.bottom]);
+
+  useEffect(() => {
     loadOnMount();
     if (resumeConvId) {
       rehydrateConversation(resumeConvId);
@@ -73,11 +88,16 @@ export default function ChatScreen() {
       if (seedAnswer) seeded.push({ id: 'seed-a', role: 'assistant', text: seedAnswer });
       setMessages(seeded);
     }
-    const sub = Keyboard.addListener('keyboardDidShow', () => {
+    const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
+      Animated.timing(inputPadBot, { toValue: 8, duration: e.duration || 250, useNativeDriver: false }).start();
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      Animated.timing(inputPadBot, { toValue: Math.max(insetBottomRef.current, 8), duration: 200, useNativeDriver: false }).start();
+    });
     return () => {
-      sub.remove();
+      showSub.remove();
+      hideSub.remove();
       if (currentRunRef.current) {
         void cancel({ requestId: currentRunRef.current.requestId }).catch(() => {});
       }
@@ -166,7 +186,7 @@ export default function ChatScreen() {
       ...allMsgs.slice(-20).map(m => ({
         role: m.role,
         content: m.text,
-        ...(m.imagePath ? { attachments: [{ path: m.imagePath }] } : {}),
+        ...(m.imagePath ? { attachments: [{ path: toPath(m.imagePath) }] } : {}),
       })),
     ];
 
@@ -174,22 +194,46 @@ export default function ChatScreen() {
     setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', text: '', streaming: true }]);
 
     try {
-      const run = completion({ modelId: mid, history, stream: true });
+      const run = completion({
+        modelId: mid, history, stream: true,
+        captureThinking: true,
+        generationParams: { predict: 600, temp: 0.7, top_k: 40 },
+      });
       currentRunRef.current = run;
       let streamed = '';
+      let thinkingText = '';
       for await (const event of run.events) {
         if (event.type === 'contentDelta') {
           streamed += event.text;
           setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: streamed } : m));
           scrollRef.current?.scrollToEnd({ animated: false });
+        } else if (event.type === 'thinkingDelta') {
+          thinkingText += event.text;
+          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, thinking: thinkingText } : m));
         }
       }
       await run.final;
       currentRunRef.current = null;
-      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, streaming: false } : m));
-      const aiMsg: Message = { id: placeholderId, role: 'assistant', text: streamed };
+
+      // Parse out any generated file block
+      const fileMatch = streamed.match(/<file name="([^"]+)">([\s\S]*?)<\/file>/);
+      let displayText = streamed;
+      let generatedFile: GeneratedFile | undefined;
+      if (fileMatch) {
+        const [fullTag, filename, fileContent] = fileMatch;
+        try {
+          const savedPath = saveMarkdownFile(filename, fileContent.trim());
+          generatedFile = { name: filename, path: savedPath };
+        } catch {}
+        displayText = streamed.replace(fullTag, '').trim();
+      }
+
+      setMessages(prev => prev.map(m => m.id === placeholderId
+        ? { ...m, text: displayText, streaming: false, generatedFile }
+        : m));
+      const aiMsg: Message = { id: placeholderId, role: 'assistant', text: displayText, thinking: thinkingText || undefined, generatedFile };
       persistMessage(aiMsg);
-      await updateLastMessage(convIdRef.current, streamed);
+      await updateLastMessage(convIdRef.current, displayText);
     } catch (err) {
       currentRunRef.current = null;
       if (!(err instanceof InferenceCancelledError)) {
@@ -245,6 +289,10 @@ export default function ChatScreen() {
     setMessages([]);
   };
 
+  const toggleThinking = (id: string) => {
+    setMessages(prev => prev.map(m => m.id === id ? { ...m, showThinking: !m.showThinking } : m));
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
@@ -275,7 +323,7 @@ export default function ChatScreen() {
 
       <KeyboardAvoidingView
         style={styles.keyboardFlex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         keyboardVerticalOffset={0}
       >
         {noModel ? (
@@ -283,11 +331,19 @@ export default function ChatScreen() {
             onGoModels={() => navigation.navigate('Download', { modelId: MODEL_KEYS.TEXT_HEALTH, returnTo: 'Scribe', returnParams: {} })}
             onRetry={() => { setNoModel(false); setLoadError(null); loadOnMount(); }} />
         ) : messages.length === 0 ? (
-          <EmptyState theme={theme} mode={mode} />
+          <EmptyState theme={theme} mode={mode} onChipPress={setInput} />
         ) : (
           <ScrollView ref={scrollRef} style={styles.msgList} contentContainerStyle={styles.msgListContent}
             keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} theme={theme} />)}
+            {messages.map(msg => (
+              <MessageBubble
+                key={msg.id}
+                msg={msg}
+                theme={theme}
+                onToggleThinking={() => toggleThinking(msg.id)}
+                onOpenFile={msg.generatedFile ? () => navigation.navigate('FilePreview', { path: msg.generatedFile!.path, name: msg.generatedFile!.name }) : undefined}
+              />
+            ))}
             {isTyping && messages[messages.length - 1]?.role !== 'assistant' && <TypingIndicator theme={theme} />}
             <View style={{ height: 8 }} />
           </ScrollView>
@@ -304,7 +360,7 @@ export default function ChatScreen() {
                 </TouchableOpacity>
               </View>
             )}
-            <View style={[styles.inputBar, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
+            <Animated.View style={[styles.inputBar, { backgroundColor: theme.card, borderTopColor: theme.border, paddingBottom: inputPadBot }]}>
               <TouchableOpacity style={styles.attachBtn} onPress={handleAttach} activeOpacity={0.7}>
                 <Text style={[styles.attachIcon, { color: theme.textSecondary }]}>{mode === 'document' ? '📄' : '+'}</Text>
               </TouchableOpacity>
@@ -333,7 +389,7 @@ export default function ChatScreen() {
                   <Text style={[styles.sendIcon, { color: (input.trim() || attachedImage) ? theme.accentFg : theme.textSecondary }]}>↑</Text>
                 </TouchableOpacity>
               )}
-            </View>
+            </Animated.View>
           </>
         )}
       </KeyboardAvoidingView>
@@ -341,7 +397,9 @@ export default function ChatScreen() {
   );
 }
 
-function MessageBubble({ msg, theme }: { msg: Message; theme: any }) {
+function MessageBubble({ msg, theme, onToggleThinking, onOpenFile }: {
+  msg: Message; theme: any; onToggleThinking: () => void; onOpenFile?: () => void;
+}) {
   const isUser = msg.role === 'user';
   return (
     <View style={[styles.bubbleRow, isUser && styles.bubbleRowUser]}>
@@ -351,12 +409,45 @@ function MessageBubble({ msg, theme }: { msg: Message; theme: any }) {
             {msg.imagePath && <Image source={{ uri: msg.imagePath }} style={styles.bubbleImage} />}
             {msg.streaming ? (
               <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}▍</Text>
-            ) : (
+            ) : msg.text ? (
               <MarkdownText color={theme.text} fontSize={15} lineHeight={22}>
                 {msg.text}
               </MarkdownText>
-            )}
+            ) : null}
           </View>
+
+          {/* Generated file card */}
+          {!msg.streaming && msg.generatedFile && onOpenFile ? (
+            <TouchableOpacity
+              style={[styles.fileCard, { backgroundColor: theme.card, borderColor: theme.accent + '55' }]}
+              onPress={onOpenFile}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.fileCardIcon}>📄</Text>
+              <View style={styles.fileCardBody}>
+                <Text style={[styles.fileCardName, { color: theme.text }]} numberOfLines={1}>{msg.generatedFile.name}</Text>
+                <Text style={[styles.fileCardMeta, { color: theme.textSecondary }]}>Markdown · tap to preview</Text>
+              </View>
+              <Text style={[styles.fileCardArrow, { color: theme.accent }]}>→</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {/* Thinking toggle */}
+          {!msg.streaming && msg.thinking ? (
+            <>
+              <TouchableOpacity style={[styles.thinkingToggle, { borderColor: theme.border }]} onPress={onToggleThinking} activeOpacity={0.7}>
+                <Text style={[styles.thinkingToggleText, { color: theme.textSecondary }]}>
+                  {msg.showThinking ? '▼ Hide thoughts' : '▶ View thoughts'}
+                </Text>
+              </TouchableOpacity>
+              {msg.showThinking && (
+                <View style={[styles.thinkingBox, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
+                  <Text selectable style={[styles.thinkingText, { color: theme.textSecondary }]}>{msg.thinking}</Text>
+                </View>
+              )}
+            </>
+          ) : null}
+
           {!msg.streaming && msg.text ? (
             <View style={styles.bubbleActions}>
               <CopyButton text={msg.text} color={theme.textSecondary} size={11} />
@@ -396,7 +487,7 @@ function TypingIndicator({ theme }: any) {
   );
 }
 
-function EmptyState({ theme, mode }: { theme: any; mode: string }) {
+function EmptyState({ theme, mode, onChipPress }: { theme: any; mode: string; onChipPress: (text: string) => void }) {
   const chips = mode === 'document'
     ? ['Draft a paragraph', 'Improve this text', 'Continue my story', 'Write a summary']
     : ['Explain quantum computing', 'Write a cover letter', 'Summarize this idea', 'Help me brainstorm'];
@@ -406,9 +497,9 @@ function EmptyState({ theme, mode }: { theme: any; mode: string }) {
       <Text style={[styles.emptySub, { color: theme.textSecondary }]}>{mode === 'document' ? 'Describe what you want to write.' : 'Type a question or attach an image.'}</Text>
       <View style={styles.chipsRow}>
         {chips.map(c => (
-          <View key={c} style={[styles.chip, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <TouchableOpacity key={c} style={[styles.chip, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => onChipPress(c)} activeOpacity={0.7}>
             <Text style={[styles.chipText, { color: theme.textSecondary }]}>{c}</Text>
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
     </View>
@@ -420,7 +511,7 @@ function NoModelState({ theme, error, onGoModels, onRetry }: any) {
     <View style={styles.emptyState}>
       <Text style={[styles.emptyTitle, { color: theme.text }]}>{error ? 'Load Failed' : 'No text model yet'}</Text>
       <Text selectable style={[styles.emptySub, { color: error ? theme.error : theme.textSecondary }]}>
-        {error ?? 'Download a text model (Qwen3-1.7B Chat or similar) to start chatting.'}
+        {error ?? 'Download a text model (Qwen 2.5 or MedPsy) to start chatting.'}
       </Text>
       {error && (
         <TouchableOpacity style={[styles.goModelBtn, { backgroundColor: theme.accent }]} onPress={onRetry}>
@@ -471,11 +562,24 @@ const styles = StyleSheet.create({
   attachThumb: { width: 40, height: 40, borderRadius: 8 },
   attachLabel: { flex: 1, fontSize: 13 },
   attachRemove: { fontSize: 16, padding: 4 },
-  inputBar: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingVertical: 10, paddingBottom: 32, gap: 8, borderTopWidth: 1 },
+  inputBar: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingTop: 10, gap: 8, borderTopWidth: 1 },
   attachBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   attachIcon: { fontSize: 24, fontWeight: '300', lineHeight: 28 },
   textInput: { flex: 1, fontSize: 16, maxHeight: 120, paddingTop: 8, paddingBottom: 8 },
   sendBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
   sendIcon: { fontSize: 18, fontWeight: '700' },
   stopSquare: { width: 14, height: 14, borderRadius: 2 },
+  fileCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderRadius: 12, borderWidth: 1, padding: 12, marginTop: 4,
+  },
+  fileCardIcon: { fontSize: 22 },
+  fileCardBody: { flex: 1, gap: 2 },
+  fileCardName: { fontSize: 13, fontWeight: '700' },
+  fileCardMeta: { fontSize: 11 },
+  fileCardArrow: { fontSize: 18, fontWeight: '600' },
+  thinkingToggle: { alignSelf: 'flex-start', borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5, marginTop: 2 },
+  thinkingToggleText: { fontSize: 11, fontWeight: '600' },
+  thinkingBox: { borderRadius: 12, borderWidth: 1, padding: 12, marginTop: 4 },
+  thinkingText: { fontSize: 12, lineHeight: 18, fontStyle: 'italic' },
 });
