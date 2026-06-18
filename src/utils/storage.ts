@@ -32,6 +32,39 @@ export function getModelsDir(): Directory {
 export async function initModelsDirectory(): Promise<void> {
   const dir = getModelsDir();
   dir.create({ intermediates: true, idempotent: true });
+  await migrateOldModelFolders();
+}
+
+// Maps old model folder names (pre-v4) to new canonical IDs.
+const FOLDER_MIGRATIONS: Record<string, string> = {
+  'medpsy-1.7b': 'text-health',      // MEDGEMMA_4B_IT_Q4_1 → text-health
+  'smolvlm2-500m-q8': 'vision',       // SMOLVLM2_500M_Q8_0 → vision
+  'smolvlm2-500m': 'vision',          // F16 variant — migrate if vision not already present
+};
+
+async function migrateOldModelFolders(): Promise<void> {
+  const modelsDir = getModelsDir();
+  for (const [oldId, newId] of Object.entries(FOLDER_MIGRATIONS)) {
+    const oldFolder = new Directory(modelsDir, oldId);
+    const newFolder = new Directory(modelsDir, newId);
+    if (!oldFolder.exists) continue;
+    // Only migrate if new folder doesn't already have a model.gguf
+    const newModel = new File(newFolder, 'model.gguf');
+    if (newModel.exists) {
+      // New folder already populated — remove the old one
+      try { oldFolder.delete(); } catch {}
+      continue;
+    }
+    // Rename old → new by moving the folder
+    try {
+      newFolder.create({ intermediates: true, idempotent: true });
+      const oldModel = new File(oldFolder, 'model.gguf');
+      if (oldModel.exists) oldModel.move(new File(newFolder, 'model.gguf'));
+      const oldMmproj = new File(oldFolder, 'mmproj.gguf');
+      if (oldMmproj.exists) oldMmproj.move(new File(newFolder, 'mmproj.gguf'));
+      oldFolder.delete();
+    } catch {}
+  }
 }
 
 export async function syncModelsFromDisk(): Promise<DownloadedModel[]> {
