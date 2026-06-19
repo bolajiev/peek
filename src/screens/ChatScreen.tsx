@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, Animated, KeyboardAvoidingView,
-  Image, Keyboard,
+  Image, Keyboard, AppState,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -20,6 +20,7 @@ import {
 import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
 import { DownloadedModel, Conversation, ChatMessage } from '../types';
 import { saveMarkdownFile } from '../utils/fileService';
+import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
 
@@ -71,6 +72,7 @@ export default function ChatScreen() {
   const currentRunRef = useRef<any>(null);
   const modelIdRef = useRef<string | null>(null);
   const convIdRef = useRef<string>(resumeConvId ?? createConversationId());
+  const isInferringRef = useRef(false);
 
   useEffect(() => {
     insetBottomRef.current = insets.bottom;
@@ -95,9 +97,18 @@ export default function ChatScreen() {
     const hideSub = Keyboard.addListener('keyboardDidHide', () => {
       Animated.timing(inputPadBot, { toValue: Math.max(insetBottomRef.current, 8), duration: 200, useNativeDriver: false }).start();
     });
+    const appStateSub = AppState.addEventListener('change', state => {
+      if (state === 'background' && isInferringRef.current) {
+        showRunningNotification('Peek Scribe');
+      } else if (state === 'active') {
+        clearInferenceNotifications();
+      }
+    });
     return () => {
       showSub.remove();
       hideSub.remove();
+      appStateSub.remove();
+      clearInferenceNotifications();
       if (currentRunRef.current) {
         void cancel({ requestId: currentRunRef.current.requestId }).catch(() => {});
       }
@@ -173,6 +184,7 @@ export default function ChatScreen() {
     setMessages(allMsgs);
     persistMessage(userMsg);
     setIsTyping(true);
+    isInferringRef.current = true;
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
 
     const mid = modelIdRef.current;
@@ -242,7 +254,13 @@ export default function ChatScreen() {
         setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, streaming: false } : m));
       }
     } finally {
+      isInferringRef.current = false;
       setIsTyping(false);
+      if (AppState.currentState !== 'active') {
+        showDoneNotification('Peek Scribe');
+      } else {
+        clearInferenceNotifications();
+      }
     }
   };
 

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
-  Animated, ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView,
+  Animated, ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, AppState,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -16,6 +16,7 @@ import { syncModelsFromDisk, getSettings, getDefaultModelId, toPath, saveDeepSes
 import { completion, cancel, loadModel, unloadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
 import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
+import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
 
@@ -50,6 +51,7 @@ export default function DeepScreen() {
   const ragWorkspaceRef = useRef<string>('');
   const currentRunRef = useRef<any>(null);
   const sessionSavedRef = useRef(false);
+  const isInferringRef = useRef(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
 
@@ -59,8 +61,17 @@ export default function DeepScreen() {
     const sub = Keyboard.addListener('keyboardDidShow', () => {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     });
+    const appStateSub = AppState.addEventListener('change', state => {
+      if (state === 'background' && isInferringRef.current) {
+        showRunningNotification('Peek Deep');
+      } else if (state === 'active') {
+        clearInferenceNotifications();
+      }
+    });
     return () => {
       sub.remove();
+      appStateSub.remove();
+      clearInferenceNotifications();
       if (embedIdRef.current) {
         unloadModel({ modelId: embedIdRef.current }).catch(() => {});
         embedIdRef.current = '';
@@ -183,6 +194,7 @@ export default function DeepScreen() {
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setPhase('thinking');
+    isInferringRef.current = true;
 
     if (!sessionSavedRef.current) {
       sessionSavedRef.current = true;
@@ -231,7 +243,13 @@ export default function DeepScreen() {
           : m));
       }
     } finally {
+      isInferringRef.current = false;
       setPhase('ready');
+      if (AppState.currentState !== 'active') {
+        showDoneNotification('Peek Deep');
+      } else {
+        clearInferenceNotifications();
+      }
     }
   };
 

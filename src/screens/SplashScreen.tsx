@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { initModelsDirectory, syncModelsFromDisk, hasOnboarded } from '../utils/storage';
+import { requestNotificationPermission } from '../utils/bgNotification';
 
 export default function SplashScreen() {
   const navigation = useNavigation<any>();
@@ -16,6 +17,7 @@ export default function SplashScreen() {
     try {
       await initModelsDirectory();
       await syncModelsFromDisk();
+      requestNotificationPermission().catch(() => {});
       const onboarded = await hasOnboarded();
       navigation.replace(onboarded ? 'Main' : 'Onboarding');
     } catch (e: any) {

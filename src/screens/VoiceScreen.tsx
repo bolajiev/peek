@@ -1,11 +1,12 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Animated, ScrollView, Alert,
+  View, Text, StyleSheet, TouchableOpacity, Animated, ScrollView, Alert, AppState,
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import { transcribeStream, completion, InferenceCancelledError } from '@qvac/sdk';
 import { whisperManager, llmManager } from '../utils/modelManager';
+import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
@@ -48,11 +49,20 @@ export default function VoiceScreen() {
     whisperManager.ensure()
       .then(() => setWhisperReady(true))
       .catch(() => {});
+    const appStateSub = AppState.addEventListener('change', state => {
+      if (state === 'background' && (phase === 'recording' || phase === 'transcribing' || phase === 'summarizing')) {
+        showRunningNotification('Peek Voice');
+      } else if (state === 'active') {
+        clearInferenceNotifications();
+      }
+    });
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (chunkTimerRef.current) clearInterval(chunkTimerRef.current);
       if (transcribeTimerRef.current) clearInterval(transcribeTimerRef.current);
       recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+      appStateSub.remove();
+      clearInferenceNotifications();
     };
   }, []);
 
@@ -276,9 +286,12 @@ export default function VoiceScreen() {
         // thinkingDelta intentionally ignored — keeps thinking out of summary
       }
       setSummary(out.trim() || "Couldn't summarize. Transcript is still saved.");
+      if (AppState.currentState !== 'active') showDoneNotification('Peek Voice');
+      else clearInferenceNotifications();
     } catch (e) {
       if (!(e instanceof InferenceCancelledError)) setSummary("Couldn't summarize. Transcript is still saved.");
       setPhase('transcript');
+      clearInferenceNotifications();
     }
   };
 

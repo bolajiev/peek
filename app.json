@@ -27,7 +27,9 @@
       "package": "com.peek.app",
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
       ]
     },
     "web": {
@@ -52,7 +54,15 @@
           "cameraPermission": "Peek needs camera access to scan and identify objects."
         }
       ],
-      "expo-document-picker"
+      "expo-document-picker",
+      [
+        "expo-notifications",
+        {
+          "icon": "./peeklogo.png",
+          "color": "#F5C518",
+          "defaultChannel": "peek-inference"
+        }
+      ]
     ],
     "extra": {
       "eas": {
