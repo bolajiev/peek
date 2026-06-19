@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, Animated, KeyboardAvoidingView, Platform,
-  Keyboard, AppState, Alert, Modal,
+  Keyboard, AppState, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -23,6 +23,7 @@ import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
 import { setDefaultModelId } from '../utils/storage';
 import { IconBack } from '../components/Icons';
+import ModelGalleryPicker from '../components/ModelGalleryPicker';
 
 interface Message {
   id: string;
@@ -276,30 +277,21 @@ export default function AIChatScreen() {
       </View>
 
       {/* ── Model picker sheet ── */}
-      <Modal visible={pickerVisible} transparent animationType="slide" onRequestClose={() => setPickerVisible(false)}>
-        <View style={[styles.pickerBackdrop]}>
-          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setPickerVisible(false)} />
-          <View style={[styles.pickerSheet, { backgroundColor: theme.card }]}>
-            <Text style={[styles.pickerTitle, { color: theme.text }]}>Switch Model</Text>
-            {downloadedModels.map(m => (
-              <TouchableOpacity
-                key={m.id}
-                style={[styles.pickerRow, { borderBottomColor: theme.border }]}
-                onPress={() => handleModelSelect(m)}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.pickerRowName, { color: theme.text }]}>{m.name}</Text>
-                  <Text style={[styles.pickerRowSub, { color: theme.textSecondary }]}>{m.size}</Text>
-                </View>
-                {m.id === activeStorageModelId && <Text style={{ color: theme.accent }}>✓</Text>}
-              </TouchableOpacity>
-            ))}
-            {downloadedModels.length === 0 && (
-              <Text style={{ color: theme.textSecondary, textAlign: 'center', padding: 20 }}>No text models downloaded.</Text>
-            )}
-          </View>
-        </View>
-      </Modal>
+      <ModelGalleryPicker
+        visible={pickerVisible}
+        moduleLabel="AI Chat"
+        moduleSubtitle="Text models for general questions and answers"
+        allModels={AVAILABLE_MODELS.filter(m => m.modelType === 'text')}
+        downloadedModels={downloadedModels}
+        activeModelId={activeStorageModelId}
+        onSelect={handleModelSelect}
+        onDownload={(modelId) => {
+          setPickerVisible(false);
+          navigation.navigate('Download', { modelId, returnTo: 'AIChat', returnParams: {} });
+        }}
+        onClose={() => setPickerVisible(false)}
+        theme={theme}
+      />
 
       {/* ── Empty state ── */}
       {messages.length === 0 && !modelLoading && (

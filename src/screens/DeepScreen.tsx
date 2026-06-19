@@ -22,7 +22,7 @@ import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
 import ResultActions from '../components/ResultActions';
 import PeekLoader from '../components/PeekLoader';
-import InlineTextPicker from '../components/InlineTextPicker';
+import ModelGalleryPicker from '../components/ModelGalleryPicker';
 import { DownloadedModel } from '../types';
 
 type Phase = 'idle' | 'ingesting' | 'ready' | 'thinking';
@@ -454,19 +454,22 @@ export default function DeepScreen() {
           </View>
         </KeyboardAvoidingView>
       )}
-      <InlineTextPicker
+      <ModelGalleryPicker
         visible={pickerVisible}
-        allTextModels={AVAILABLE_MODELS.filter(m => m.modelType === 'text')}
+        moduleLabel="Peek Deep"
+        moduleSubtitle="Text models for document analysis"
+        allModels={AVAILABLE_MODELS.filter(m => m.modelType === 'text')}
         downloadedModels={downloadedModels.filter(m => m.modelType === 'text')}
         activeModelId={activeStorageModelId}
         onSelect={async (model) => {
           await setDefaultModelId(model.id);
           loadLlm(model.id);
         }}
-        onGetModel={(modelId) => {
+        onDownload={(modelId) => {
           navigation.navigate('Download', { modelId, returnTo: 'Deep', returnParams: {} });
         }}
         onClose={() => setPickerVisible(false)}
+        theme={theme}
       />
     </Animated.View>
   );

@@ -24,7 +24,8 @@ import { DownloadedModel, Conversation, ChatMessage } from '../types';
 import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
-import InlineTextPicker from '../components/InlineTextPicker';
+import ModelGalleryPicker from '../components/ModelGalleryPicker';
+import MdPreviewPanel from '../components/MdPreviewPanel';
 import { setDefaultModelId } from '../utils/storage';
 
 interface GeneratedFile { name: string; fileUri: string; artifactType: 'md' | 'html'; }
@@ -74,6 +75,9 @@ export default function ChatScreen() {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [downloadedModels, setDownloadedModels] = useState<DownloadedModel[]>([]);
   const [activeStorageModelId, setActiveStorageModelId] = useState<string | null>(null);
+  const [mdPanelVisible, setMdPanelVisible] = useState(false);
+  const [mdPanelSource, setMdPanelSource] = useState('');
+  const [mdPanelFile, setMdPanelFile] = useState<GeneratedFile | undefined>();
 
   const scrollRef = useRef<ScrollView>(null);
   const currentRunRef = useRef<any>(null);
@@ -262,6 +266,21 @@ export default function ChatScreen() {
       let generatedFile: GeneratedFile | undefined;
       if (artifact) {
         generatedFile = await saveArtifact(artifact.type, artifact.source);
+        if (generatedFile) {
+          if (artifact.type === 'md') {
+            // Open MD preview panel in-app
+            setMdPanelSource(artifact.source);
+            setMdPanelFile(generatedFile);
+            setTimeout(() => setMdPanelVisible(true), 300);
+          } else {
+            // HTML → share sheet so user can open in browser
+            Sharing.shareAsync(generatedFile.fileUri, {
+              mimeType: 'text/html',
+              dialogTitle: 'Open or save HTML file',
+              UTI: 'public.html',
+            }).catch(() => {});
+          }
+        }
       }
 
       setMessages(prev => prev.map(m => m.id === placeholderId
@@ -493,19 +512,31 @@ export default function ChatScreen() {
         )}
       </KeyboardAvoidingView>
 
-      <InlineTextPicker
+      <ModelGalleryPicker
         visible={pickerVisible}
-        allTextModels={AVAILABLE_MODELS.filter(m => m.modelType === 'text')}
+        moduleLabel="Peek Scribe"
+        moduleSubtitle="Text models for writing and documents"
+        allModels={AVAILABLE_MODELS.filter(m => m.modelType === 'text')}
         downloadedModels={downloadedModels.filter(m => m.modelType === 'text')}
         activeModelId={activeStorageModelId}
         onSelect={async (model) => {
           await setDefaultModelId(model.id);
           loadTextModel(model.id);
         }}
-        onGetModel={(modelId) => {
+        onDownload={(modelId) => {
           navigation.navigate('Download', { modelId, returnTo: 'Scribe', returnParams: {} });
         }}
         onClose={() => setPickerVisible(false)}
+        theme={theme}
+      />
+
+      <MdPreviewPanel
+        visible={mdPanelVisible}
+        source={mdPanelSource}
+        fileName={mdPanelFile?.name ?? 'document.md'}
+        fileUri={mdPanelFile?.fileUri}
+        onClose={() => setMdPanelVisible(false)}
+        theme={theme}
       />
     </View>
   );
