@@ -5,7 +5,7 @@ import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { IconBack } from '../components/Icons';
 
-const DOWNLOAD_URL = 'https://linktr.ee/peekapp';
+const DOWNLOAD_URL = 'https://linktr.ee/PeekchatAI';
 
 const FEATURES = [
   { emoji: '📷', title: 'Peek Lens', desc: 'Scan documents and images with on-device vision AI.' },
