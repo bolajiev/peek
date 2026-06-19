@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useRef, useState, useEffect, useCallback } from 'react';
 import {
-  View, StyleSheet, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity,
   Animated, Dimensions, useColorScheme,
 } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
 import { ThemeMode } from '../types';
 import { getTheme } from '../theme';
@@ -28,10 +29,42 @@ import DeepHubScreen from '../screens/DeepHubScreen';
 import FilePreviewScreen from '../screens/FilePreviewScreen';
 import AboutScreen from '../screens/AboutScreen';
 import Sidebar from '../components/Sidebar';
+import V2ChatScreen from '../screens/V2ChatScreen';
+import V2VoiceScreen from '../screens/V2VoiceScreen';
 
 const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
 const { width: SW } = Dimensions.get('window');
 const SIDEBAR_W = SW * 0.78;
+
+// ── V2 Home: 2-tab bottom nav ──────────────────────────────
+function V2HomeScreen() {
+  const themeMode = useTheme();
+  const theme = getTheme(themeMode);
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarStyle: {
+          backgroundColor: theme.card,
+          borderTopColor: theme.border,
+          height: 60,
+          paddingBottom: 8,
+        },
+        tabBarActiveTintColor: theme.accent,
+        tabBarInactiveTintColor: theme.textSecondary,
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
+        tabBarIcon: ({ color }) => {
+          const icon = route.name === 'V2Chat' ? '💬' : '🎙';
+          return <Text style={{ fontSize: 20 }}>{icon}</Text>;
+        },
+      })}
+    >
+      <Tab.Screen name="V2Chat" component={V2ChatScreen} options={{ tabBarLabel: 'Chat' }} />
+      <Tab.Screen name="V2Voice" component={V2VoiceScreen} options={{ tabBarLabel: 'Voice' }} />
+    </Tab.Navigator>
+  );
+}
 
 type ThemeCtx = { mode: ThemeMode; toggle: () => void };
 const ThemeContext = createContext<ThemeCtx>({ mode: 'dark', toggle: () => {} });
@@ -121,6 +154,7 @@ export default function AppNavigator() {
         <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}>
           <Stack.Screen name="Splash" component={SplashScreen} />
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+          <Stack.Screen name="V2Home" component={V2HomeScreen} />
           <Stack.Screen name="Main" component={MainScreen} />
           <Stack.Screen name="Lens" component={LensHubScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="LensScan" component={ScanScreen} options={{ animation: 'slide_from_right' }} />
@@ -145,6 +179,7 @@ export default function AppNavigator() {
           <Stack.Screen name="Download" component={DownloadScreen} options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="FilePreview" component={FilePreviewScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="About" component={AboutScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="V2Chat" component={V2ChatScreen} options={{ animation: 'slide_from_right' }} />
         </Stack.Navigator>
       </NavigationContainer>
     </ThemeContext.Provider>
