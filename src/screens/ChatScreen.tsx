@@ -15,7 +15,7 @@ import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import {
-  syncModelsFromDisk, getSettings, getDefaultModelId,
+  syncModelsFromDisk, getSettings, getDefaultModelId, setDefaultModelId,
   getConversations, saveConversation, getMessages,
   appendMessage, updateLastMessage, createConversationId, toPath,
 } from '../utils/storage';
@@ -26,7 +26,6 @@ import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
 import ModelGalleryPicker from '../components/ModelGalleryPicker';
 import MdPreviewPanel from '../components/MdPreviewPanel';
-import { setDefaultModelId } from '../utils/storage';
 
 interface GeneratedFile { name: string; fileUri: string; artifactType: 'md' | 'html'; }
 

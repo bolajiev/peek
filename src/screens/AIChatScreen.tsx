@@ -1,8 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, Animated, KeyboardAvoidingView, Platform,
-  Keyboard, AppState, Alert,
+  ScrollView, Animated, Keyboard, AppState, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -488,10 +487,4 @@ const styles = StyleSheet.create({
   stopBtn: { flex: 1, borderRadius: 20, borderWidth: 1, paddingVertical: 12, alignItems: 'center' },
   stopBtnText: { fontSize: 14, fontWeight: '700', letterSpacing: 0.4 },
   genTimer: { fontSize: 12, alignSelf: 'flex-end', paddingBottom: 12 },
-  pickerBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
-  pickerSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 40, paddingTop: 8 },
-  pickerTitle: { fontSize: 15, fontWeight: '700', paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 },
-  pickerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
-  pickerRowName: { fontSize: 14, fontWeight: '600', marginBottom: 2 },
-  pickerRowSub: { fontSize: 12 },
 });

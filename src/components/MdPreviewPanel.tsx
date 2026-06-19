@@ -7,7 +7,7 @@ import Markdown from 'react-native-markdown-display';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 
-const { height: SH, width: SW } = Dimensions.get('window');
+const { height: SH } = Dimensions.get('window');
 const PANEL_H = SH * 0.75;
 
 interface Props {
