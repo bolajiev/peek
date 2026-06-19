@@ -12,7 +12,7 @@ import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { getSettings, toPath, syncModelsFromDisk } from '../utils/storage';
-import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
+import { SYSTEM_PROMPTS, MODEL_KEYS, stripThink } from '../utils/models';
 import { Paths, File, Directory } from 'expo-file-system';
 import { IconVoice, IconUpload, IconMic, IconBack } from '../components/Icons';
 import MarkdownText from '../components/MarkdownText';
@@ -310,10 +310,12 @@ export default function VoiceScreen() {
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') {
           out += (ev as any).text;
-          setSummary(out + '▍');
+          const { text: visible } = stripThink(out);
+          setSummary(visible + '▍');
         }
       }
-      setSummary(out.trim() || '');
+      const { text: finalOut } = stripThink(out);
+      setSummary(finalOut.trim() || '');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (AppState.currentState !== 'active') showDoneNotification('Peek Voice');
       else clearInferenceNotifications();

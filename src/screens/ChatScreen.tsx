@@ -2,14 +2,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, Animated, KeyboardAvoidingView,
-  Image, Keyboard, AppState,
+  Image, Keyboard, AppState, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
-import { File } from 'expo-file-system';
+import { File, Directory, Paths } from 'expo-file-system';
 import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import * as Haptics from 'expo-haptics';
+import * as Sharing from 'expo-sharing';
 import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
@@ -18,16 +19,15 @@ import {
   getConversations, saveConversation, getMessages,
   appendMessage, updateLastMessage, createConversationId, toPath,
 } from '../utils/storage';
-import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS } from '../utils/models';
+import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS, stripThink, detectArtifact } from '../utils/models';
 import { DownloadedModel, Conversation, ChatMessage } from '../types';
-import { saveMarkdownFile } from '../utils/fileService';
 import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
 import InlineTextPicker from '../components/InlineTextPicker';
 import { setDefaultModelId } from '../utils/storage';
 
-interface GeneratedFile { name: string; path: string; }
+interface GeneratedFile { name: string; fileUri: string; artifactType: 'md' | 'html'; }
 
 interface Message {
   id: string;
@@ -40,7 +40,6 @@ interface Message {
   generatedFile?: GeneratedFile;
 }
 
-const SYSTEM_CHAT = SYSTEM_PROMPTS.chat;
 const SYSTEM_DOC = SYSTEM_PROMPTS.scribe;
 
 const MODULE_ID = 'scribe';
@@ -54,7 +53,7 @@ export default function ChatScreen() {
   const seedQuery: string | undefined = route.params?.seedQuery;
   const seedAnswer: string | undefined = route.params?.seedAnswer;
   const seedImage: string | undefined = route.params?.seedImage;
-  const SYSTEM_PROMPT = mode === 'document' ? SYSTEM_DOC : SYSTEM_CHAT;
+  const SYSTEM_PROMPT = SYSTEM_DOC;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
   const insets = useSafeAreaInsets();
@@ -245,7 +244,8 @@ export default function ChatScreen() {
       for await (const event of run.events) {
         if (event.type === 'contentDelta') {
           streamed += event.text;
-          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: streamed } : m));
+          const { text: visible } = stripThink(streamed);
+          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: visible } : m));
           scrollRef.current?.scrollToEnd({ animated: false });
         } else if (event.type === 'thinkingDelta') {
           thinkingText += event.text;
@@ -255,24 +255,20 @@ export default function ChatScreen() {
       await run.final;
       currentRunRef.current = null;
 
-      // Parse out any generated file block
-      const fileMatch = streamed.match(/<file name="([^"]+)">([\s\S]*?)<\/file>/);
-      let displayText = streamed;
+      // Strip <think> and detect fenced artifact blocks
+      const { text: displayText, thinking: thinkFallback } = stripThink(streamed);
+      const finalThinking = thinkingText || thinkFallback || undefined;
+      const artifact = detectArtifact(displayText);
       let generatedFile: GeneratedFile | undefined;
-      if (fileMatch) {
-        const [fullTag, filename, fileContent] = fileMatch;
-        try {
-          const savedPath = saveMarkdownFile(filename, fileContent.trim());
-          generatedFile = { name: filename, path: savedPath };
-        } catch {}
-        displayText = streamed.replace(fullTag, '').trim();
+      if (artifact) {
+        generatedFile = await saveArtifact(artifact.type, artifact.source);
       }
 
       setMessages(prev => prev.map(m => m.id === placeholderId
-        ? { ...m, text: displayText, streaming: false, generatedFile }
+        ? { ...m, text: displayText, streaming: false, generatedFile, thinking: finalThinking }
         : m));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const aiMsg: Message = { id: placeholderId, role: 'assistant', text: displayText, thinking: thinkingText || undefined, generatedFile };
+      const aiMsg: Message = { id: placeholderId, role: 'assistant', text: displayText, thinking: finalThinking, generatedFile };
       persistMessage(aiMsg);
       await updateLastMessage(convIdRef.current, displayText);
     } catch (err) {
@@ -301,6 +297,42 @@ export default function ChatScreen() {
       void cancel({ requestId: currentRunRef.current.requestId }).catch(() => {});
       currentRunRef.current = null;
     }
+  };
+
+  const saveArtifact = async (type: 'md' | 'html', source: string): Promise<GeneratedFile | undefined> => {
+    try {
+      const artifactsDir = new Directory(Paths.document, 'artifacts');
+      artifactsDir.create({ intermediates: true, idempotent: true });
+      const ts = Date.now();
+      const tryMd = type === 'md';
+      const preferredExt = tryMd ? 'md' : 'html';
+      let file = new File(artifactsDir, `peek-scribe-${ts}.${preferredExt}`);
+      try {
+        file.write(source);
+      } catch {
+        // Fallback: save as html if md write failed
+        file = new File(artifactsDir, `peek-scribe-${ts}.html`);
+        file.write(source);
+      }
+      return { name: file.uri.split('/').pop() ?? `peek-scribe-${ts}.${preferredExt}`, fileUri: file.uri, artifactType: type };
+    } catch {
+      return undefined;
+    }
+  };
+
+  const shareArtifact = async (file: GeneratedFile) => {
+    try {
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(file.fileUri, {
+          mimeType: file.artifactType === 'html' ? 'text/html' : 'text/markdown',
+          dialogTitle: `Share ${file.artifactType.toUpperCase()} file`,
+          UTI: file.artifactType === 'html' ? 'public.html' : 'net.daringfireball.markdown',
+        });
+      } else {
+        Alert.alert('File saved', `Saved as: ${file.name}`);
+      }
+    } catch {}
   };
 
   const handleAttach = async () => {
@@ -408,7 +440,7 @@ export default function ChatScreen() {
                 msg={msg}
                 theme={theme}
                 onToggleThinking={() => toggleThinking(msg.id)}
-                onOpenFile={msg.generatedFile ? () => navigation.navigate('FilePreview', { path: msg.generatedFile!.path, name: msg.generatedFile!.name }) : undefined}
+                onShareFile={msg.generatedFile ? () => shareArtifact(msg.generatedFile!) : undefined}
               />
             ))}
             {isTyping && messages[messages.length - 1]?.role !== 'assistant' && <TypingIndicator theme={theme} />}
@@ -479,8 +511,8 @@ export default function ChatScreen() {
   );
 }
 
-function MessageBubble({ msg, theme, onToggleThinking, onOpenFile }: {
-  msg: Message; theme: any; onToggleThinking: () => void; onOpenFile?: () => void;
+function MessageBubble({ msg, theme, onToggleThinking, onShareFile }: {
+  msg: Message; theme: any; onToggleThinking: () => void; onShareFile?: () => void;
 }) {
   const isUser = msg.role === 'user';
   return (
@@ -509,20 +541,20 @@ function MessageBubble({ msg, theme, onToggleThinking, onOpenFile }: {
             ) : null}
           </View>
 
-          {/* Generated file card */}
-          {!msg.streaming && msg.generatedFile && onOpenFile ? (
-            <TouchableOpacity
-              style={[styles.fileCard, { backgroundColor: theme.card, borderColor: theme.accent + '55' }]}
-              onPress={onOpenFile}
-              activeOpacity={0.75}
-            >
-              <Text style={styles.fileCardIcon}>📄</Text>
+          {/* Generated file card — Save & Share */}
+          {!msg.streaming && msg.generatedFile ? (
+            <View style={[styles.fileCard, { backgroundColor: theme.cardAlt, borderColor: theme.accent + '55' }]}>
+              <Text style={styles.fileCardIcon}>{msg.generatedFile.artifactType === 'html' ? '🌐' : '📄'}</Text>
               <View style={styles.fileCardBody}>
                 <Text style={[styles.fileCardName, { color: theme.text }]} numberOfLines={1}>{msg.generatedFile.name}</Text>
-                <Text style={[styles.fileCardMeta, { color: theme.textSecondary }]}>Markdown · tap to preview</Text>
+                <Text style={[styles.fileCardMeta, { color: theme.textSecondary }]}>{msg.generatedFile.artifactType === 'html' ? 'HTML page' : 'Markdown file'} · saved to device</Text>
               </View>
-              <Text style={[styles.fileCardArrow, { color: theme.accent }]}>→</Text>
-            </TouchableOpacity>
+              {onShareFile && (
+                <TouchableOpacity onPress={onShareFile} style={[styles.shareBtn, { backgroundColor: theme.accent }]} activeOpacity={0.8}>
+                  <Text style={[styles.shareBtnText, { color: '#000' }]}>Share ↗</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           ) : null}
 
           {/* Thinking toggle */}
@@ -666,6 +698,8 @@ const styles = StyleSheet.create({
   fileCardName: { fontSize: 13, fontWeight: '700' },
   fileCardMeta: { fontSize: 11 },
   fileCardArrow: { fontSize: 18, fontWeight: '600' },
+  shareBtn: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  shareBtnText: { fontSize: 12, fontWeight: '700' },
   thinkingToggle: { alignSelf: 'flex-start', borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5, marginTop: 2 },
   thinkingToggleText: { fontSize: 11, fontWeight: '600' },
   thinkingBox: { borderRadius: 12, borderWidth: 1, padding: 12, marginTop: 4 },

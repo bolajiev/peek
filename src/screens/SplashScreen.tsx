@@ -19,7 +19,7 @@ export default function SplashScreen() {
       await syncModelsFromDisk();
       requestNotificationPermission().catch(() => {});
       const onboarded = await hasOnboarded();
-      navigation.replace(onboarded ? 'V2Home' : 'Onboarding');
+      navigation.replace(onboarded ? 'Main' : 'Onboarding');
     } catch (e: any) {
       console.error('[boot] init failed:', e);
       setBootError(e?.message || 'Startup error. Tap Retry to try again.');

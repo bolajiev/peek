@@ -7,7 +7,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme, useSidebar } from '../navigation/AppNavigator';
 import {
-  IconLens, IconVoice, IconScribe, IconDeep, IconRelay, IconMenu,
+  IconLens, IconVoice, IconScribe, IconDeep, IconRelay, IconChat, IconMenu,
 } from '../components/Icons';
 import { syncModelsFromDisk } from '../utils/storage';
 import { MODEL_KEYS } from '../utils/models';
@@ -18,7 +18,7 @@ const H_PAD = 12;
 const CARD_GAP = 10;
 const CARD_W = (SW - H_PAD * 2 - CARD_GAP) / 2;
 
-type ModuleKey = 'Lens' | 'Voice' | 'Scribe' | 'Deep' | 'Relay';
+type ModuleKey = 'Lens' | 'Voice' | 'Scribe' | 'Deep' | 'Chat' | 'Relay';
 
 interface Module {
   id: ModuleKey;
@@ -58,6 +58,12 @@ const MODULES: Module[] = [
     id: 'Deep', screen: 'Deep', label: 'AI Model', title: 'Peek Deep',
     desc: 'Research documents privately on-device',
     icon: (c) => <IconDeep size={20} color={c} />,
+    modelKey: TEXT_MODEL_KEY,
+  },
+  {
+    id: 'Chat', screen: 'AIChat', label: 'AI Model', title: 'AI Chat',
+    desc: 'Ask anything — questions, explanations, code, ideas',
+    icon: (c) => <IconChat size={20} color={c} />,
     modelKey: TEXT_MODEL_KEY,
   },
   {

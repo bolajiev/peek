@@ -15,7 +15,7 @@ import { ragIngestText, ragQuery, buildRagContext, newRagWorkspace, closeRagWork
 import { syncModelsFromDisk, getSettings, getDefaultModelId, setDefaultModelId, toPath, saveDeepSession } from '../utils/storage';
 import { completion, cancel, loadModel, unloadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
-import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS } from '../utils/models';
+import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS, stripThink } from '../utils/models';
 import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
@@ -241,13 +241,15 @@ export default function DeepScreen() {
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') {
           full += (ev as any).text;
-          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: full } : m));
+          const { text: visible } = stripThink(full);
+          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: visible } : m));
           scrollRef.current?.scrollToEnd({ animated: false });
         }
       }
       currentRunRef.current = null;
 
-      const finalText = full.trim() || 'No response.';
+      const { text: cleanFull } = stripThink(full);
+      const finalText = cleanFull.trim() || 'No response.';
       setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: finalText } : m));
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e) {
