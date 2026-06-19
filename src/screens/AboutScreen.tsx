@@ -1,6 +1,7 @@
-import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, ScrollView, Linking, Image } from 'react-native';
+import React, { useRef, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, ScrollView, Linking, Image, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import * as Updates from 'expo-updates';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { IconBack } from '../components/Icons';
@@ -19,10 +20,33 @@ export default function AboutScreen() {
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 350, useNativeDriver: true }).start();
   }, []);
+
+  const handleCheckUpdates = async () => {
+    setChecking(true);
+    try {
+      const update = await Updates.checkForUpdateAsync();
+      if (update.isAvailable) {
+        Alert.alert('Update Available', 'A new version of Peek is ready.', [
+          { text: 'Later', style: 'cancel' },
+          { text: 'Install', onPress: async () => {
+            await Updates.fetchUpdateAsync();
+            await Updates.reloadAsync();
+          }},
+        ]);
+      } else {
+        Alert.alert('Up to Date', 'You have the latest version of Peek.');
+      }
+    } catch {
+      Linking.openURL(DOWNLOAD_URL);
+    } finally {
+      setChecking(false);
+    }
+  };
 
   return (
     <Animated.View style={[styles.root, { backgroundColor: theme.background, opacity: fadeAnim }]}>
@@ -75,11 +99,14 @@ export default function AboutScreen() {
         {/* Download */}
         <Text style={[styles.sectionLabel, { color: theme.textSecondary, marginTop: 8 }]}>Get the App</Text>
         <TouchableOpacity
-          style={[styles.downloadBtn, { backgroundColor: theme.accent }]}
-          onPress={() => Linking.openURL(DOWNLOAD_URL)}
+          style={[styles.downloadBtn, { backgroundColor: theme.accent, opacity: checking ? 0.7 : 1 }]}
+          onPress={handleCheckUpdates}
           activeOpacity={0.85}
+          disabled={checking}
         >
-          <Text style={[styles.downloadBtnText, { color: theme.accentFg }]}>Download Peek →</Text>
+          <Text style={[styles.downloadBtnText, { color: theme.accentFg }]}>
+            {checking ? 'Checking…' : 'Check for Updates'}
+          </Text>
         </TouchableOpacity>
         <Text style={[styles.urlHint, { color: theme.textSecondary }]}>{DOWNLOAD_URL}</Text>
 

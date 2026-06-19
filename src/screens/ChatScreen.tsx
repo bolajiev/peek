@@ -67,12 +67,15 @@ export default function ChatScreen() {
   const [loadProgress, setLoadProgress] = useState(0);
   const [noModel, setNoModel] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [fastMode, setFastMode] = useState(false);
+  const [genElapsed, setGenElapsed] = useState(0);
 
   const scrollRef = useRef<ScrollView>(null);
   const currentRunRef = useRef<any>(null);
   const modelIdRef = useRef<string | null>(null);
   const convIdRef = useRef<string>(resumeConvId ?? createConversationId());
   const isInferringRef = useRef(false);
+  const genTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     insetBottomRef.current = insets.bottom;
@@ -118,7 +121,7 @@ export default function ChatScreen() {
   const rehydrateConversation = async (convId: string) => {
     const stored = await getMessages(convId);
     if (stored.length > 0) {
-      setMessages(stored.map(m => ({ id: m.id, role: m.role, text: m.content, imagePath: m.imagePath })));
+      setMessages(stored.map(m => ({ id: m.id, role: m.role, text: m.content, imagePath: m.imagePath, thinking: m.thinking })));
     }
   };
 
@@ -159,17 +162,25 @@ export default function ChatScreen() {
       role: msg.role,
       content: msg.text,
       imagePath: msg.imagePath,
+      thinking: msg.thinking,
       createdAt: new Date().toISOString(),
     };
     await appendMessage(cm);
-    const conv: Conversation = {
-      id: convId,
-      moduleId: MODULE_ID,
-      title: msg.role === 'user' && msg.text ? msg.text.slice(0, 60) : 'Chat',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    await saveConversation(conv);
+    // Only update conversation title from user messages (assistant has no meaningful title)
+    if (msg.role === 'user') {
+      const conv: Conversation = {
+        id: convId,
+        moduleId: MODULE_ID,
+        title: msg.text ? msg.text.slice(0, 60) : 'Chat',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await saveConversation(conv);
+    } else {
+      // Update updatedAt timestamp on the conversation without changing title
+      const existing = (await getConversations(MODULE_ID)).find(c => c.id === convId);
+      if (existing) await saveConversation({ ...existing, updatedAt: new Date().toISOString() });
+    }
   };
 
   const handleSend = async () => {
@@ -185,16 +196,20 @@ export default function ChatScreen() {
     persistMessage(userMsg);
     setIsTyping(true);
     isInferringRef.current = true;
+    setGenElapsed(0);
+    genTimerRef.current = setInterval(() => setGenElapsed(s => s + 1), 1000);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
 
     const mid = modelIdRef.current;
     if (!mid) {
       setIsTyping(false);
+      if (genTimerRef.current) { clearInterval(genTimerRef.current); genTimerRef.current = null; }
       return;
     }
 
+    const fastSuffix = fastMode ? '\n\nAnswer directly and concisely in 1-3 sentences. No reasoning preamble.' : '';
     const history: any[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: SYSTEM_PROMPT + fastSuffix },
       ...allMsgs.slice(-20).map(m => ({
         role: m.role,
         content: m.text,
@@ -208,8 +223,8 @@ export default function ChatScreen() {
     try {
       const run = completion({
         modelId: mid, history, stream: true,
-        captureThinking: true,
-        generationParams: { predict: 600, temp: 0.7, top_k: 40 },
+        captureThinking: !fastMode,
+        generationParams: { predict: fastMode ? 256 : 600, temp: 0.7, top_k: 40 },
       });
       currentRunRef.current = run;
       let streamed = '';
@@ -256,6 +271,8 @@ export default function ChatScreen() {
     } finally {
       isInferringRef.current = false;
       setIsTyping(false);
+      setGenElapsed(0);
+      if (genTimerRef.current) { clearInterval(genTimerRef.current); genTimerRef.current = null; }
       if (AppState.currentState !== 'active') {
         showDoneNotification('Peek Scribe');
       } else {
@@ -320,11 +337,24 @@ export default function ChatScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, { color: theme.text }]}>{mode === 'document' ? 'Document' : 'Scribe'}</Text>
-          <Text style={[styles.headerSub, { color: modelLoading ? theme.accent : theme.textSecondary }]} numberOfLines={1}>
-            {modelLoading ? `Loading${loadProgress > 0 ? ` ${Math.round(loadProgress)}%` : '...'}` : modelName}
+          <Text style={[styles.headerSub, { color: modelLoading ? theme.accent : isTyping ? theme.accent : theme.textSecondary }]} numberOfLines={1}>
+            {modelLoading
+              ? `Loading${loadProgress > 0 ? ` ${Math.round(loadProgress)}%` : '...'}`
+              : isTyping
+              ? `Generating… ${genElapsed}s`
+              : modelName}
           </Text>
         </View>
         <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={[styles.modeToggle, { backgroundColor: fastMode ? theme.accent + '22' : theme.card, borderColor: fastMode ? theme.accent : theme.border }]}
+            onPress={() => setFastMode(f => !f)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={[styles.modeToggleText, { color: fastMode ? theme.accent : theme.textSecondary }]}>
+              {fastMode ? '⚡ Fast' : '🧠 Deep'}
+            </Text>
+          </TouchableOpacity>
           {messages.length > 0 && (
             <TouchableOpacity onPress={handleNewConversation} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={[styles.clearText, { color: theme.textSecondary }]}>New</Text>
@@ -349,7 +379,7 @@ export default function ChatScreen() {
             onGoModels={() => navigation.navigate('Download', { modelId: MODEL_KEYS.TEXT_HEALTH, returnTo: 'Scribe', returnParams: {} })}
             onRetry={() => { setNoModel(false); setLoadError(null); loadOnMount(); }} />
         ) : messages.length === 0 ? (
-          <EmptyState theme={theme} mode={mode} onChipPress={setInput} />
+          <EmptyState theme={theme} mode={mode} />
         ) : (
           <ScrollView ref={scrollRef} style={styles.msgList} contentContainerStyle={styles.msgListContent}
             keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -516,21 +546,11 @@ function TypingIndicator({ theme }: any) {
   );
 }
 
-function EmptyState({ theme, mode, onChipPress }: { theme: any; mode: string; onChipPress: (text: string) => void }) {
-  const chips = mode === 'document'
-    ? ['Draft a paragraph', 'Improve this text', 'Continue my story', 'Write a summary']
-    : ['Explain quantum computing', 'Write a cover letter', 'Summarize this idea', 'Help me brainstorm'];
+function EmptyState({ theme, mode }: { theme: any; mode: string }) {
   return (
     <View style={styles.emptyState}>
       <Text style={[styles.emptyTitle, { color: theme.text }]}>{mode === 'document' ? 'Start Writing' : 'Ask me anything'}</Text>
       <Text style={[styles.emptySub, { color: theme.textSecondary }]}>{mode === 'document' ? 'Describe what you want to write.' : 'Type a question or attach an image.'}</Text>
-      <View style={styles.chipsRow}>
-        {chips.map(c => (
-          <TouchableOpacity key={c} style={[styles.chip, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => onChipPress(c)} activeOpacity={0.7}>
-            <Text style={[styles.chipText, { color: theme.textSecondary }]}>{c}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
     </View>
   );
 }
@@ -565,8 +585,10 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', letterSpacing: 0.5 },
   headerSub: { fontSize: 11, marginTop: 1 },
-  headerRight: { width: 60, alignItems: 'flex-end' },
+  headerRight: { alignItems: 'flex-end', gap: 6 },
   clearText: { fontSize: 13, fontWeight: '600' },
+  modeToggle: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },
+  modeToggleText: { fontSize: 11, fontWeight: '700' },
   msgList: { flex: 1 },
   msgListContent: { padding: 16, gap: 10, paddingBottom: 24 },
   bubbleRow: { flexDirection: 'row', marginBottom: 4 },

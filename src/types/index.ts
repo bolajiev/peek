@@ -33,6 +33,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   imagePath?: string;
+  thinking?: string;
   createdAt: string;
 }
 
