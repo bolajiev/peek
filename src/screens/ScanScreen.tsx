@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  TextInput, Animated, Image, KeyboardAvoidingView, Platform,
+  Animated, Image,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Paths, File } from 'expo-file-system';
@@ -30,7 +30,6 @@ export default function ScanScreen() {
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisText, setAnalysisText] = useState('');
-  const [question, setQuestion] = useState('');
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [zoom, setZoom] = useState(0);
   const [modelReady, setModelReady] = useState(false);
@@ -153,7 +152,7 @@ export default function ScanScreen() {
         setModelReady(true);
       }
 
-      const q = question.trim() || 'What is this? Describe what you see.';
+      const q = 'What is this? Describe what you see.';
       setAnalysisText('Analyzing...');
       const t0 = Date.now();
 
@@ -221,7 +220,7 @@ export default function ScanScreen() {
       const msg = err?.message?.replace(/file:\/\/[^\s]*/g, '[model file]') ?? 'Analysis failed';
       navigation.navigate('Result', {
         text: '',
-        query: question || '',
+        query: 'What is this? Describe what you see.',
         error: msg,
         modelName: '',
       });
@@ -234,7 +233,7 @@ export default function ScanScreen() {
       Animated.timing(captureScale, { toValue: 0.88, duration: 80, useNativeDriver: true }),
       Animated.spring(captureScale, { toValue: 1, useNativeDriver: true, friction: 4 }),
     ]).start();
-    const photo = await cameraRef.current.takePictureAsync({ quality: 0.72 });
+    const photo = await cameraRef.current.takePictureAsync({ quality: 0.72, shutterSound: false });
     if (photo?.uri) await runInference(photo.uri);
   };
 
@@ -266,12 +265,25 @@ export default function ScanScreen() {
 
   return (
     <View style={styles.container}>
-      <CameraView ref={cameraRef} style={styles.camera} facing="back" mode="picture" zoom={zoom} mute>
-
+      <CameraView
+        ref={cameraRef}
+        style={styles.camera}
+        facing="back"
+        mode="picture"
+        zoom={zoom}
+        mute
+        ratio="16:9"
+      >
+        {/* Top bar */}
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
             <Text style={styles.backText}>← Back</Text>
           </TouchableOpacity>
+          {!modelReady && (
+            <View style={styles.modelBadge}>
+              <Text style={styles.modelBadgeText}>Loading model…</Text>
+            </View>
+          )}
           <View style={styles.zoomBadge}>
             <Text style={styles.zoomText}>{zoomLabel}</Text>
           </View>
@@ -279,6 +291,20 @@ export default function ScanScreen() {
 
         <View style={styles.viewfinderFlex} />
 
+        {/* Zoom controls */}
+        <View style={styles.zoomRow}>
+          <TouchableOpacity style={styles.zoomBtn} onPress={() => adjustZoom(-ZOOM_STEP)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Text style={styles.zoomBtnText}>−</Text>
+          </TouchableOpacity>
+          <View style={styles.zoomPill}>
+            <Text style={styles.zoomPillText}>{zoomLabel}</Text>
+          </View>
+          <TouchableOpacity style={styles.zoomBtn} onPress={() => adjustZoom(ZOOM_STEP)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Text style={styles.zoomBtnText}>+</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Analyzing overlay */}
         {isAnalyzing && (
           <View style={styles.analyzeOverlay}>
             {previewUri && <Image source={{ uri: previewUri }} style={styles.previewThumb} />}
@@ -286,48 +312,36 @@ export default function ScanScreen() {
             <Text style={[styles.analyzeText, { color: '#fff' }]}>{analysisText}</Text>
           </View>
         )}
-
       </CameraView>
 
-      {/* Bottom bar */}
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[styles.bottomBar, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
-          <TextInput
-            style={[styles.questionInput, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
-            placeholder={modelReady ? 'Ask about this image…' : 'Preparing vision model…'}
-            placeholderTextColor={theme.textSecondary}
-            value={question}
-            onChangeText={setQuestion}
-            returnKeyType="done"
-            blurOnSubmit
-          />
-          <View style={styles.captureRow}>
+      {/* Bottom bar — no text input */}
+      <View style={[styles.bottomBar, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
+        <View style={styles.captureRow}>
+          <TouchableOpacity
+            style={[styles.sideBtn, { opacity: isAnalyzing ? 0.4 : 1 }]}
+            onPress={handleGallery}
+            disabled={isAnalyzing}
+          >
+            <View style={[styles.galleryIcon, { borderColor: theme.border, backgroundColor: theme.card }]}>
+              <View style={[styles.galleryInner, { backgroundColor: theme.textSecondary }]} />
+            </View>
+            <Text style={[styles.sideBtnLabel, { color: theme.textSecondary }]}>Gallery</Text>
+          </TouchableOpacity>
+
+          <Animated.View style={{ transform: [{ scale: captureScale }] }}>
             <TouchableOpacity
-              style={[styles.sideBtn, { opacity: isAnalyzing ? 0.4 : 1 }]}
-              onPress={handleGallery}
+              style={[styles.captureBtn, { borderColor: modelReady ? theme.accent : theme.border, opacity: isAnalyzing ? 0.4 : 1 }]}
+              onPress={handleCapture}
               disabled={isAnalyzing}
+              activeOpacity={0.85}
             >
-              <View style={[styles.galleryIcon, { borderColor: theme.border, backgroundColor: theme.card }]}>
-                <View style={[styles.galleryInner, { backgroundColor: theme.textSecondary }]} />
-              </View>
-              <Text style={[styles.sideBtnLabel, { color: theme.textSecondary }]}>Gallery</Text>
+              <View style={[styles.captureInner, { backgroundColor: modelReady ? theme.accent : theme.textSecondary }]} />
             </TouchableOpacity>
+          </Animated.View>
 
-            <Animated.View style={{ transform: [{ scale: captureScale }] }}>
-              <TouchableOpacity
-                style={[styles.captureBtn, { borderColor: modelReady ? theme.accent : theme.border, opacity: isAnalyzing ? 0.4 : 1 }]}
-                onPress={handleCapture}
-                disabled={isAnalyzing}
-                activeOpacity={0.85}
-              >
-                <View style={[styles.captureInner, { backgroundColor: modelReady ? theme.accent : theme.textSecondary }]} />
-              </TouchableOpacity>
-            </Animated.View>
-
-            <View style={styles.sideBtn} />
-          </View>
+          <View style={styles.sideBtn} />
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </View>
   );
 }
@@ -371,9 +385,25 @@ const styles = StyleSheet.create({
   },
   backBtn: { paddingRight: 4 },
   backText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  modelBadge: { backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  modelBadgeText: { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
   zoomBadge: { backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   zoomText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   viewfinderFlex: { flex: 1 },
+  zoomRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 16, paddingVertical: 14, backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  zoomBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  zoomBtnText: { color: '#fff', fontSize: 22, fontWeight: '300', lineHeight: 26 },
+  zoomPill: {
+    backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, minWidth: 54, alignItems: 'center',
+  },
+  zoomPillText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   analyzeOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center', alignItems: 'center', gap: 14,
@@ -382,11 +412,6 @@ const styles = StyleSheet.create({
   previewThumb: { width: 110, height: 110, borderRadius: 14 },
   analyzeText: { fontSize: 14, fontWeight: '600' },
   bottomBar: { borderTopWidth: 1, paddingTop: 14, paddingHorizontal: 16, paddingBottom: 32 },
-  questionInput: {
-    borderRadius: 14, borderWidth: 1,
-    paddingHorizontal: 16, paddingVertical: 12,
-    fontSize: 15, marginBottom: 14,
-  },
   captureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24 },
   sideBtn: { width: 56, alignItems: 'center', gap: 5 },
   galleryIcon: { width: 38, height: 32, borderRadius: 6, borderWidth: 1.5, overflow: 'hidden', justifyContent: 'flex-end' },
