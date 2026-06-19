@@ -473,3 +473,29 @@ export async function getDeepHistory(): Promise<DeepSessionRecord[]> {
   } catch { return []; }
 }
 
+const VOICE_HISTORY_KEY = '@peek_voice_history';
+
+export interface VoiceSessionRecord {
+  id: string;
+  title: string;
+  transcript: string;
+  summary: string;
+  createdAt: string;
+}
+
+export async function saveVoiceSession(record: VoiceSessionRecord): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(VOICE_HISTORY_KEY);
+    const list: VoiceSessionRecord[] = raw ? JSON.parse(raw) : [];
+    list.unshift(record);
+    await AsyncStorage.setItem(VOICE_HISTORY_KEY, JSON.stringify(list.slice(0, 50)));
+  } catch {}
+}
+
+export async function getVoiceHistory(): Promise<VoiceSessionRecord[]> {
+  try {
+    const raw = await AsyncStorage.getItem(VOICE_HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+

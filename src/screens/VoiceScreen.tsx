@@ -11,7 +11,7 @@ import { showRunningNotification, showDoneNotification, clearInferenceNotificati
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getSettings, toPath, syncModelsFromDisk } from '../utils/storage';
+import { getSettings, toPath, syncModelsFromDisk, saveVoiceSession } from '../utils/storage';
 import { SYSTEM_PROMPTS, MODEL_KEYS, stripThink } from '../utils/models';
 import { Paths, File, Directory } from 'expo-file-system';
 import { IconVoice, IconUpload, IconMic, IconBack } from '../components/Icons';
@@ -315,7 +315,14 @@ export default function VoiceScreen() {
         }
       }
       const { text: finalOut } = stripThink(out);
-      setSummary(finalOut.trim() || '');
+      const summaryText = finalOut.trim() || '';
+      setSummary(summaryText);
+      // Persist session
+      const tx = transcriptRef.current;
+      if (tx && summaryText) {
+        const title = tx.slice(0, 60).replace(/\s+/g, ' ').trim() || 'Voice session';
+        saveVoiceSession({ id: Date.now().toString(), title, transcript: tx, summary: summaryText, createdAt: new Date().toISOString() });
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (AppState.currentState !== 'active') showDoneNotification('Peek Voice');
       else clearInferenceNotifications();

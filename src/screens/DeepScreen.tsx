@@ -12,7 +12,8 @@ import { unzipSync, strFromU8 } from 'fflate';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext, newRagWorkspace, closeRagWorkspace } from '../utils/ragService';
-import { syncModelsFromDisk, getSettings, getDefaultModelId, setDefaultModelId, toPath, saveDeepSession } from '../utils/storage';
+import { syncModelsFromDisk, getSettings, getDefaultModelId, setDefaultModelId, toPath, saveDeepSession, appendMessage, saveConversation, createConversationId } from '../utils/storage';
+import { ChatMessage, Conversation } from '../types';
 import { completion, cancel, loadModel, unloadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
 import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS, stripThink } from '../utils/models';
@@ -60,6 +61,7 @@ export default function DeepScreen() {
   const currentRunRef = useRef<any>(null);
   const sessionSavedRef = useRef(false);
   const isInferringRef = useRef(false);
+  const convIdRef = useRef<string>(createConversationId());
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
 
@@ -212,8 +214,17 @@ export default function DeepScreen() {
 
     if (!sessionSavedRef.current) {
       sessionSavedRef.current = true;
-      saveDeepSession({ id: Date.now().toString(), docName: sourceTitle, firstQuestion: q, createdAt: new Date().toISOString() });
+      const sesId = Date.now().toString();
+      saveDeepSession({ id: sesId, docName: sourceTitle, firstQuestion: q, createdAt: new Date().toISOString() });
+      const conv: Conversation = {
+        id: convIdRef.current, moduleId: 'deep',
+        title: q.slice(0, 60),
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      };
+      saveConversation(conv);
     }
+    const userCm: ChatMessage = { id: userMsg.id, conversationId: convIdRef.current, role: 'user', content: q, createdAt: new Date().toISOString() };
+    appendMessage(userCm);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
     const placeholderId = 'ai-' + Date.now();
@@ -251,6 +262,8 @@ export default function DeepScreen() {
       const { text: cleanFull } = stripThink(full);
       const finalText = cleanFull.trim() || 'No response.';
       setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: finalText } : m));
+      const aiCm: ChatMessage = { id: placeholderId, conversationId: convIdRef.current, role: 'assistant', content: finalText, createdAt: new Date().toISOString() };
+      appendMessage(aiCm);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e) {
       if (!(e instanceof InferenceCancelledError)) {
