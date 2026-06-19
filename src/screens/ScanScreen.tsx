@@ -284,9 +284,6 @@ export default function ScanScreen() {
               <Text style={styles.modelBadgeText}>Loading model…</Text>
             </View>
           )}
-          <View style={styles.zoomBadge}>
-            <Text style={styles.zoomText}>{zoomLabel}</Text>
-          </View>
         </View>
 
         <View style={styles.viewfinderFlex} />
@@ -387,8 +384,6 @@ const styles = StyleSheet.create({
   backText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   modelBadge: { backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   modelBadgeText: { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
-  zoomBadge: { backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  zoomText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   viewfinderFlex: { flex: 1 },
   zoomRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',

@@ -141,6 +141,7 @@ export default function DeepScreen() {
     }
 
     setPhase('ingesting');
+    sessionSavedRef.current = false;
     try {
       const docsDir = new Directory(Paths.document, 'peek', 'deep');
       docsDir.create({ intermediates: true, idempotent: true });

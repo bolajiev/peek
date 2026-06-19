@@ -43,6 +43,10 @@ export default function VoiceScreen() {
   const chunkProcessingRef = useRef(false);
   const isStoppingRef = useRef(false);
   const liveScrollRef = useRef<ScrollView>(null);
+  const phaseRef = useRef<Phase>('idle');
+
+  // Keep phaseRef in sync so AppState listener always sees current phase
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }).start();
@@ -50,7 +54,8 @@ export default function VoiceScreen() {
       .then(() => setWhisperReady(true))
       .catch(() => {});
     const appStateSub = AppState.addEventListener('change', state => {
-      if (state === 'background' && (phase === 'recording' || phase === 'transcribing' || phase === 'summarizing')) {
+      const p = phaseRef.current;
+      if (state === 'background' && (p === 'recording' || p === 'transcribing' || p === 'summarizing')) {
         showRunningNotification('Peek Voice');
       } else if (state === 'active') {
         clearInferenceNotifications();
