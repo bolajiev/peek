@@ -27,6 +27,7 @@ import DownloadScreen from '../screens/DownloadScreen';
 import ScribeHubScreen from '../screens/ScribeHubScreen';
 import DeepHubScreen from '../screens/DeepHubScreen';
 import FilePreviewScreen from '../screens/FilePreviewScreen';
+import AboutScreen from '../screens/AboutScreen';
 import Sidebar from '../components/Sidebar';
 
 const Stack = createNativeStackNavigator();
@@ -145,6 +146,7 @@ export default function AppNavigator() {
           <Stack.Screen name="Settings" component={SettingsScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Download" component={DownloadScreen} options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="FilePreview" component={FilePreviewScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="About" component={AboutScreen} options={{ animation: 'slide_from_right' }} />
         </Stack.Navigator>
       </NavigationContainer>
     </ThemeContext.Provider>

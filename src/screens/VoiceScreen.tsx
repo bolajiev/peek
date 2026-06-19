@@ -35,28 +35,26 @@ export default function VoiceScreen() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const recordingRef = useRef<Audio.Recording | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const transcribeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const chunkQueueRef = useRef<string[]>([]);
+  const chunkProcessingRef = useRef(false);
+  const isStoppingRef = useRef(false);
+  const liveScrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }).start();
     whisperManager.ensure()
       .then(() => setWhisperReady(true))
       .catch(() => {});
-    return () => { cleanupRecording(); stopTranscribeTimer(); };
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (chunkTimerRef.current) clearInterval(chunkTimerRef.current);
+      if (transcribeTimerRef.current) clearInterval(transcribeTimerRef.current);
+      recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+    };
   }, []);
-
-  const cleanupRecording = async () => {
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    if (recordingRef.current) {
-      await recordingRef.current.stopAndUnloadAsync().catch(() => {});
-      recordingRef.current = null;
-    }
-  };
-
-  const stopTranscribeTimer = () => {
-    if (transcribeTimerRef.current) { clearInterval(transcribeTimerRef.current); transcribeTimerRef.current = null; }
-  };
 
   const startPulse = () => {
     pulseLoopRef.current = Animated.loop(Animated.sequence([
@@ -71,6 +69,71 @@ export default function VoiceScreen() {
     pulseAnim.setValue(1);
   };
 
+  const saveChunkToDir = async (cacheUri: string): Promise<string | null> => {
+    try {
+      const recsDir = new Directory(Paths.document, 'peek', 'recordings');
+      recsDir.create({ intermediates: true, idempotent: true });
+      const dest = new File(recsDir, `chunk_${Date.now()}.m4a`);
+      new File(cacheUri).copy(dest);
+      return dest.exists ? dest.uri : cacheUri;
+    } catch {
+      return cacheUri;
+    }
+  };
+
+  const processChunkQueue = async () => {
+    if (chunkProcessingRef.current) return;
+    chunkProcessingRef.current = true;
+    const wId = await whisperManager.ensure().catch(() => null);
+    if (!wId) { chunkProcessingRef.current = false; return; }
+
+    while (chunkQueueRef.current.length > 0) {
+      const uri = chunkQueueRef.current.shift()!;
+      try {
+        const gen = transcribeStream({ modelId: wId, audioChunk: toPath(uri) });
+        let text = '';
+        for await (const chunk of gen) { text += chunk; }
+        if (text.trim()) {
+          setTranscript(prev => (prev ? prev + ' ' : '') + text.trim());
+          setTimeout(() => liveScrollRef.current?.scrollToEnd({ animated: true }), 80);
+        }
+      } catch {}
+    }
+
+    chunkProcessingRef.current = false;
+    if (isStoppingRef.current && chunkQueueRef.current.length === 0) {
+      isStoppingRef.current = false;
+      setPhase('transcript');
+    }
+  };
+
+  const rotateChunk = async () => {
+    const rec = recordingRef.current;
+    if (!rec) return;
+
+    // Stop current chunk
+    await rec.stopAndUnloadAsync().catch(() => {});
+    const cacheUri = rec.getURI();
+    recordingRef.current = null;
+
+    // Start next recording immediately
+    try {
+      const newRec = new Audio.Recording();
+      await newRec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await newRec.startAsync();
+      recordingRef.current = newRec;
+    } catch {}
+
+    // Queue finished chunk
+    if (cacheUri) {
+      const savedUri = await saveChunkToDir(cacheUri);
+      if (savedUri) {
+        chunkQueueRef.current.push(savedUri);
+        processChunkQueue();
+      }
+    }
+  };
+
   const handleRecord = async () => {
     if (phase === 'recording') { await stopRecording(); return; }
     const { granted } = await Audio.requestPermissionsAsync();
@@ -80,8 +143,14 @@ export default function VoiceScreen() {
     await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
     await rec.startAsync();
     recordingRef.current = rec;
+    chunkQueueRef.current = [];
+    chunkProcessingRef.current = false;
+    isStoppingRef.current = false;
+    setTranscript('');
+    setSummary('');
     setRecordingTime(0);
     timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
+    chunkTimerRef.current = setInterval(rotateChunk, 5000);
     setPhase('recording');
     startPulse();
   };
@@ -89,22 +158,28 @@ export default function VoiceScreen() {
   const stopRecording = async () => {
     stopPulse();
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    const rec = recordingRef.current;
-    if (!rec) return;
-    recordingRef.current = null;
-    await rec.stopAndUnloadAsync().catch(() => {});
-    const cacheUri = rec.getURI();
-    if (!cacheUri) { setInitError('Recording not found. Record again.'); return; }
+    if (chunkTimerRef.current) { clearInterval(chunkTimerRef.current); chunkTimerRef.current = null; }
 
-    try {
-      const recsDir = new Directory(Paths.document, 'peek', 'recordings');
-      recsDir.create({ intermediates: true, idempotent: true });
-      const destFile = new File(recsDir, `rec_${Date.now()}.m4a`);
-      new File(cacheUri).copy(destFile);
-      if (!destFile.exists) throw new Error('File copy failed');
-      await doTranscribe(destFile.uri);
-    } catch (err: any) {
-      setInitError(err?.message || 'Could not save recording.');
+    const rec = recordingRef.current;
+    recordingRef.current = null;
+
+    if (rec) {
+      await rec.stopAndUnloadAsync().catch(() => {});
+      const cacheUri = rec.getURI();
+      if (cacheUri) {
+        const savedUri = await saveChunkToDir(cacheUri);
+        if (savedUri) chunkQueueRef.current.push(savedUri);
+      }
+    }
+
+    isStoppingRef.current = true;
+
+    if (chunkQueueRef.current.length === 0 && !chunkProcessingRef.current) {
+      isStoppingRef.current = false;
+      setPhase('transcript');
+    } else {
+      setPhase('transcribing');
+      processChunkQueue();
     }
   };
 
@@ -118,14 +193,13 @@ export default function VoiceScreen() {
       const ext = picked.name?.split('.').pop() ?? 'm4a';
       const destFile = new File(recsDir, `upload_${Date.now()}.${ext}`);
       new File(picked.uri).copy(destFile);
-      if (!destFile.exists) throw new Error('Could not copy audio file');
-      await doTranscribe(destFile.uri);
+      await doTranscribeFile(destFile.exists ? destFile.uri : picked.uri);
     } catch {
-      await doTranscribe(picked.uri);
+      await doTranscribeFile(picked.uri);
     }
   };
 
-  const doTranscribe = async (uri: string) => {
+  const doTranscribeFile = async (uri: string) => {
     setPhase('transcribing');
     setTranscript('');
     setSummary('');
@@ -138,21 +212,15 @@ export default function VoiceScreen() {
       const gen = transcribeStream({ modelId: wId, audioChunk: toPath(uri) });
       for await (const chunk of gen) {
         text += chunk;
-        if (firstChunk) {
-          firstChunk = false;
-          setPhase('transcript');
-        }
+        if (firstChunk) { firstChunk = false; setPhase('transcript'); }
         setTranscript(text);
       }
-      if (!text.trim()) {
-        setTranscript('(No speech detected)');
-        setPhase('transcript');
-      }
+      if (!text.trim()) { setTranscript('(No speech detected)'); setPhase('transcript'); }
     } catch (err: any) {
       setInitError(err?.message || 'Transcription failed');
       setPhase('idle');
     } finally {
-      stopTranscribeTimer();
+      if (transcribeTimerRef.current) { clearInterval(transcribeTimerRef.current); transcribeTimerRef.current = null; }
     }
   };
 
@@ -290,31 +358,53 @@ export default function VoiceScreen() {
         </>
       )}
 
-      {/* ── Recording ── */}
+      {/* ── Recording (with live transcript) ── */}
       {phase === 'recording' && (
-        <View style={styles.centeredPane}>
-          <Animated.View style={[styles.recordRing, { borderColor: theme.error, transform: [{ scale: pulseAnim }] }]}>
-            <View style={[styles.recordSquare, { backgroundColor: theme.error }]} />
-          </Animated.View>
-          <Text style={[styles.recordTime, { color: theme.text }]}>{fmtTime(recordingTime)}</Text>
-          <Text style={[styles.recordLabel, { color: theme.textSecondary }]}>Recording…</Text>
-          <TouchableOpacity
-            style={[styles.stopBtn, { backgroundColor: theme.error }]}
-            onPress={stopRecording}
-            activeOpacity={0.85}
+        <View style={styles.recordingPane}>
+          <View style={[styles.recordBar, { borderBottomColor: theme.border }]}>
+            <Animated.View style={[styles.recordRingSmall, { borderColor: theme.error, transform: [{ scale: pulseAnim }] }]}>
+              <View style={[styles.recordSquareSmall, { backgroundColor: theme.error }]} />
+            </Animated.View>
+            <Text style={[styles.recordTimeSmall, { color: theme.text }]}>{fmtTime(recordingTime)}</Text>
+            <Text style={[styles.recordingLabel, { color: theme.error }]}>● REC</Text>
+            <TouchableOpacity
+              style={[styles.stopBtnSmall, { backgroundColor: theme.error }]}
+              onPress={stopRecording}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.stopBtnText, { color: '#fff' }]}>Stop</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            ref={liveScrollRef}
+            style={styles.liveTranscriptScroll}
+            contentContainerStyle={styles.liveTranscriptContent}
+            showsVerticalScrollIndicator={false}
           >
-            <Text style={[styles.stopBtnText, { color: '#fff' }]}>Stop & Transcribe</Text>
-          </TouchableOpacity>
+            {transcript ? (
+              <Text style={[styles.liveTranscriptText, { color: theme.text }]}>
+                {transcript}<Text style={{ color: theme.accent }}>▍</Text>
+              </Text>
+            ) : (
+              <View style={styles.liveEmptyState}>
+                <Text style={[styles.liveEmptyEmoji]}>🎙️</Text>
+                <Text style={[styles.liveEmptyText, { color: theme.textSecondary }]}>
+                  Speak now — words appear here every few seconds
+                </Text>
+              </View>
+            )}
+          </ScrollView>
         </View>
       )}
 
-      {/* ── Transcribing ── */}
+      {/* ── Transcribing (final processing) ── */}
       {phase === 'transcribing' && (
         <View style={styles.centeredPane}>
           <ThinkDots color={theme.accent} />
-          <Text style={[styles.spinLabel, { color: theme.text }]}>Transcribing…</Text>
+          <Text style={[styles.spinLabel, { color: theme.text }]}>Finalizing transcript…</Text>
           <Text style={[styles.spinSub, { color: theme.textSecondary }]}>
-            Whisper on-device · {fmtTime(transcribeElapsed)}
+            Processing last segment · Whisper on-device
           </Text>
         </View>
       )}
@@ -449,6 +539,25 @@ const styles = StyleSheet.create({
   actionTitle: { fontSize: 14, fontWeight: '700' },
   actionSub: { fontSize: 12 },
   centeredPane: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, gap: 12 },
+  recordingPane: { flex: 1 },
+  recordBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1,
+  },
+  recordRingSmall: {
+    width: 32, height: 32, borderRadius: 16, borderWidth: 2,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  recordSquareSmall: { width: 10, height: 10, borderRadius: 2 },
+  recordTimeSmall: { fontSize: 18, fontWeight: '300', letterSpacing: 1, flex: 1 },
+  recordingLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  stopBtnSmall: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
+  liveTranscriptScroll: { flex: 1 },
+  liveTranscriptContent: { padding: 20, flexGrow: 1 },
+  liveTranscriptText: { fontSize: 17, lineHeight: 28 },
+  liveEmptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, paddingTop: 60 },
+  liveEmptyEmoji: { fontSize: 40 },
+  liveEmptyText: { fontSize: 14, textAlign: 'center', lineHeight: 21, maxWidth: 260 },
   recordRing: {
     width: 100, height: 100, borderRadius: 50, borderWidth: 3,
     justifyContent: 'center', alignItems: 'center', marginBottom: 8,

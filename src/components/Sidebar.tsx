@@ -95,6 +95,7 @@ export default function Sidebar({ onClose, onNavigate }: Props) {
             { label: 'Model Manager', screen: 'Models' },
             { label: 'History', screen: 'History' },
             { label: 'Preferences', screen: 'Settings' },
+            { label: 'About Peek', screen: 'About' },
           ].map(item => (
             <TouchableOpacity
               key={item.screen}

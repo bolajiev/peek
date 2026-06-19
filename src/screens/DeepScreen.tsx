@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Paths, File, Directory } from 'expo-file-system';
+import { readAsStringAsync, EncodingType } from 'expo-file-system/legacy';
+import { unzipSync, strFromU8 } from 'fflate';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext, newRagWorkspace, closeRagWorkspace } from '../utils/ragService';
@@ -98,13 +100,34 @@ export default function DeepScreen() {
     }
   };
 
+  const extractDocxText = async (uri: string): Promise<string> => {
+    const b64 = await readAsStringAsync(uri, { encoding: EncodingType.Base64 });
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const zipped = unzipSync(bytes);
+    const docXml = zipped['word/document.xml'];
+    if (!docXml) throw new Error('Not a valid .docx file — missing word/document.xml');
+    const xml = strFromU8(docXml);
+    const matches = xml.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) || [];
+    return matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ').replace(/\s+/g, ' ').trim();
+  };
+
   const handlePickFile = async () => {
     const result = await DocumentPicker.getDocumentAsync({
-      type: ['text/plain', 'text/markdown', 'application/json', '*/*'],
+      type: ['text/plain', 'text/markdown', 'application/json',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '*/*'],
       copyToCacheDirectory: true,
     });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
+    const ext = (asset.name ?? '').split('.').pop()?.toLowerCase() ?? '';
+
+    if (ext === 'doc') {
+      Alert.alert('Old .doc format not supported', 'Open the file in Word or Google Docs and save as .docx or .txt, then try again.');
+      return;
+    }
 
     setPhase('ingesting');
     try {
@@ -112,12 +135,17 @@ export default function DeepScreen() {
       docsDir.create({ intermediates: true, idempotent: true });
       const destFile = new File(docsDir, `doc_${Date.now()}_${asset.name}`);
       new File(asset.uri).copy(destFile);
+      const workingUri = destFile.exists ? destFile.uri : asset.uri;
 
-      const srcFile = destFile.exists ? destFile : new File(asset.uri);
-      const content = await srcFile.text();
+      let content: string;
+      if (ext === 'docx') {
+        content = await extractDocxText(workingUri);
+      } else {
+        content = await new File(workingUri).text();
+      }
 
       if (!content || content.length < 50) {
-        throw new Error('File appears empty or too short to analyze. Only plain text files are supported.');
+        throw new Error('File appears empty or too short to analyze.');
       }
 
       const truncated = content.slice(0, 40000);
