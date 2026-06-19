@@ -65,9 +65,14 @@ async function migrateOldModelFolders(): Promise<void> {
   const modelsDir = getModelsDir();
 
   // Old external path used before the permission-fix (Android only, best-effort).
-  const oldExternal = Platform.OS === 'android'
-    ? new Directory('file:///storage/emulated/0/Android/data/com.peek.app/files/peek/models')
-    : null;
+  // Wrapped in try because the path may not exist on all devices/package names.
+  let oldExternal: Directory | null = null;
+  if (Platform.OS === 'android') {
+    try {
+      const d = new Directory('file:///storage/emulated/0/Android/data/com.peek.app/files/peek/models');
+      oldExternal = d;
+    } catch { /* path doesn't exist or no permission — skip external migration */ }
+  }
 
   const allIds = [...new Set([
     ...Object.keys(FOLDER_RENAMES),

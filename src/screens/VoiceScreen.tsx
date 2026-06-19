@@ -229,11 +229,9 @@ export default function VoiceScreen() {
     setLoaderLabel('Finalizing transcript…');
     if (chunkQueueRef.current.length === 0 && !chunkProcessingRef.current) {
       isStoppingRef.current = false;
-      if (transcriptRef.current) {
-        setPhase('transcript');
-      } else {
-        setPhase('transcript');
-      }
+      // If nothing was captured, disarm so the summary section doesn't show a pending cursor
+      if (!transcriptRef.current) autoSummarizeRef.current = false;
+      setPhase('transcript');
     } else {
       setPhase('transcribing');
       processChunkQueue();
@@ -284,7 +282,6 @@ export default function VoiceScreen() {
   const handleSummarize = async () => {
     const currentTranscript = transcriptRef.current;
     if (!currentTranscript || currentTranscript === '(No speech detected)') return;
-    setLoaderLabel('Summarizing…');
     setPhase('summarizing');
     setSummary('');
     try {
@@ -468,15 +465,15 @@ export default function VoiceScreen() {
         </View>
       )}
 
-      {/* ── Processing (transcribing or summarizing) ── */}
-      {(phase === 'transcribing' || phase === 'summarizing') && (
+      {/* ── Processing (transcribing only) ── */}
+      {phase === 'transcribing' && (
         <View style={styles.centeredPane}>
           <PeekLoader label={loaderLabel} />
         </View>
       )}
 
-      {/* ── Done — transcript + summary ── */}
-      {(phase === 'transcript' || phase === 'done') && (
+      {/* ── Result — transcript + summary (visible during summarizing too) ── */}
+      {(phase === 'transcript' || phase === 'summarizing' || phase === 'done') && (
         <ScrollView
           style={styles.resultScroll}
           contentContainerStyle={styles.resultContent}
@@ -501,6 +498,9 @@ export default function VoiceScreen() {
           {/* Summary section */}
           <View style={[styles.sectionRow, { marginTop: 24 }]}>
             <Text style={[styles.sectionHead, { color: theme.textSecondary }]}>SUMMARY</Text>
+            {phase === 'summarizing' && (
+              <Text style={[styles.wordCount, { color: theme.accent }]}>Generating…</Text>
+            )}
             {phase === 'done' && !summary && (
               <Text style={[styles.wordCount, { color: theme.textSecondary }]}>No model</Text>
             )}
@@ -523,15 +523,15 @@ export default function VoiceScreen() {
                 Download a text model to enable AI summaries.
               </Text>
             </View>
-          ) : (
-            // Still summarizing — show streaming summary inline
+          ) : phase === 'summarizing' ? (
+            // Streaming summary — tokens arrive live
             <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
               <Text style={[styles.resultText, { color: theme.text }]}>
                 {summary || ''}
-                {!summary && <Text style={{ color: theme.accent }}>▍</Text>}
+                <Text style={{ color: theme.accent }}>▍</Text>
               </Text>
             </View>
-          )}
+          ) : null}
 
           {/* Continue in Chat */}
           <TouchableOpacity
