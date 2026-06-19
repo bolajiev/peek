@@ -227,18 +227,14 @@ export default function ModelsScreen() {
     return (
       <View
         key={model.id}
-        style={[
-          styles.modelCard,
-          { backgroundColor: theme.card, borderColor: model.badge === 'Recommended' ? theme.accent : 'transparent', borderWidth: model.badge === 'Recommended' ? 1.5 : 0 },
-        ]}
+        style={[styles.modelCard, { backgroundColor: theme.card }]}
       >
-        {/* Top row: badge + actions */}
+        {/* Top row: model name + actions */}
         <View style={styles.cardTop}>
           <View style={styles.cardTopLeft}>
-            {model.badge && (
-              <View style={[styles.badge, { backgroundColor: model.badgeColor || theme.accent }]}>
-                <Text style={[styles.badgeText, { color: (model.badgeColor || theme.accent) === theme.accent ? theme.accentFg : '#fff' }]}>{model.badge}</Text>
-              </View>
+            <Text style={[styles.modelName, { color: theme.text }]}>{model.name}</Text>
+            {model.tagline && (
+              <Text style={[styles.modelTagline, { color: theme.textSecondary }]}>{model.tagline}</Text>
             )}
           </View>
 
@@ -269,9 +265,6 @@ export default function ModelsScreen() {
             </View>
           )}
         </View>
-
-        {/* Model name */}
-        <Text style={[styles.modelName, { color: theme.text }]}>{model.name}</Text>
 
         {/* Description */}
         {model.description && (
@@ -381,16 +374,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'flex-start',
     justifyContent: 'space-between', marginBottom: 8,
   },
-  cardTopLeft: { flex: 1, marginRight: 8 },
-  badge: {
-    alignSelf: 'flex-start', borderRadius: 6,
-    paddingHorizontal: 8, paddingVertical: 3,
-  },
-  badgeText: {
-    fontSize: 10, fontWeight: '700',
-    textTransform: 'uppercase', letterSpacing: 0.5,
-  },
-  cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardTopLeft: { flex: 1 },
+  cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 8 },
   checkmark: {
     borderRadius: 8, borderWidth: 1,
     paddingHorizontal: 10, paddingVertical: 5,
@@ -405,8 +390,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 6,
   },
   deleteBtnText: { fontSize: 13, fontWeight: '600' },
-  modelName: { fontSize: 16, fontWeight: '700', marginBottom: 6 },
-  modelDescription: { fontSize: 13, lineHeight: 18, marginBottom: 10 },
+  modelName: { fontSize: 16, fontWeight: '700', marginBottom: 2 },
+  modelTagline: { fontSize: 12, lineHeight: 16 },
+  modelDescription: { fontSize: 13, lineHeight: 18, marginBottom: 10, marginTop: 8 },
   chipsRow: { flexDirection: 'row', gap: 6 },
   chip: {
     borderWidth: 1, borderRadius: 6,

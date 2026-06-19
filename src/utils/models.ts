@@ -15,13 +15,13 @@ export const MODEL_KEYS = {
 export type ModelKey = (typeof MODEL_KEYS)[keyof typeof MODEL_KEYS];
 
 // Exactly three models — no model zoo.
+// TEXT_FAST is the silent startup default (small, always available first).
 export const AVAILABLE_MODELS: ModelInfo[] = [
   {
     id: MODEL_KEYS.TEXT_FAST,
-    name: 'Qwen 2.5 · Fast',
+    name: 'Qwen · Fast',
     modelType: 'text',
-    badge: 'Fast',
-    badgeColor: '#6B7280',
+    tagline: 'Fast, low-data text. Light on storage.',
     description: 'Lightweight general-purpose AI. Fast responses, low RAM. Good backup when storage is limited.',
     size: '1.1GB',
     sizeBytes: 1_056_782_912,
@@ -32,9 +32,8 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     id: MODEL_KEYS.TEXT_HEALTH,
     name: 'MedPsy',
     modelType: 'text',
-    badge: 'Default',
-    badgeColor: '#FDC803',
-    description: 'Default AI. Knowledgeable, accurate, and runs fully on-device. Best for Quick Chat, Scribe, Voice, and Deep.',
+    tagline: 'Health & nutrition specialist.',
+    description: 'Knowledgeable, accurate, and runs fully on-device. Best for Scribe, Voice, and Deep.',
     size: '2.4GB',
     sizeBytes: 2_564_052_800,
     modelSrc: MEDGEMMA_4B_IT_Q4_1.src,
@@ -44,8 +43,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     id: MODEL_KEYS.VISION,
     name: 'SmolVLM2 · Vision',
     modelType: 'vision',
-    badge: 'Vision',
-    badgeColor: '#3B82F6',
+    tagline: 'On-device image understanding for Lens.',
     description: 'On-device vision model for Peek Lens. Analyzes photos, food, labels, and more.',
     size: '521MB',
     sizeBytes: 436_808_704 + 108_785_184,

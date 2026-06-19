@@ -5,6 +5,7 @@ export interface ModelInfo {
   id: string;
   name: string;
   description?: string;
+  tagline?: string;
   badge?: string;
   badgeColor?: string;
   size: string;

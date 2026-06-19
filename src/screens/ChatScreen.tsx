@@ -17,12 +17,14 @@ import {
   getConversations, saveConversation, getMessages,
   appendMessage, updateLastMessage, createConversationId, toPath,
 } from '../utils/storage';
-import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
+import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS } from '../utils/models';
 import { DownloadedModel, Conversation, ChatMessage } from '../types';
 import { saveMarkdownFile } from '../utils/fileService';
 import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
+import InlineTextPicker from '../components/InlineTextPicker';
+import { setDefaultModelId } from '../utils/storage';
 
 interface GeneratedFile { name: string; path: string; }
 
@@ -69,6 +71,9 @@ export default function ChatScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fastMode, setFastMode] = useState(false);
   const [genElapsed, setGenElapsed] = useState(0);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [downloadedModels, setDownloadedModels] = useState<DownloadedModel[]>([]);
+  const [activeStorageModelId, setActiveStorageModelId] = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
   const currentRunRef = useRef<any>(null);
@@ -125,12 +130,15 @@ export default function ChatScreen() {
     }
   };
 
-  const loadOnMount = async () => {
+  const loadTextModel = async (forceModelId?: string) => {
     setModelLoading(true);
     setLoadProgress(0);
+    setNoModel(false);
+    setLoadError(null);
     try {
       const synced = await syncModelsFromDisk();
-      const defaultId = await getDefaultModelId();
+      setDownloadedModels(synced);
+      const defaultId = forceModelId ?? await getDefaultModelId();
       const preferredId = preselectedModelId ?? defaultId ?? MODEL_KEYS.TEXT_HEALTH;
       const model = synced.find(m => m.id === preferredId)
         ?? synced.find(m => m.id === MODEL_KEYS.TEXT_HEALTH)
@@ -139,6 +147,7 @@ export default function ChatScreen() {
         ?? synced[0];
       if (!model) { setNoModel(true); setModelLoading(false); return; }
       setModelName(model.name);
+      setActiveStorageModelId(model.id);
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
       const modelConfig: any = { ctx_size: 4096, device };
@@ -153,6 +162,8 @@ export default function ChatScreen() {
       setModelLoading(false);
     }
   };
+
+  const loadOnMount = () => loadTextModel();
 
   const persistMessage = async (msg: Message) => {
     const convId = convIdRef.current;
@@ -335,16 +346,20 @@ export default function ChatScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.menuBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <Text style={[styles.backBtn, { color: theme.text }]}>←</Text>
         </TouchableOpacity>
-        <View style={styles.headerCenter}>
+        <TouchableOpacity
+          style={styles.headerCenter}
+          onPress={() => !modelLoading && !isTyping && setPickerVisible(true)}
+          activeOpacity={modelLoading || isTyping ? 1 : 0.65}
+        >
           <Text style={[styles.headerTitle, { color: theme.text }]}>{mode === 'document' ? 'Document' : 'Scribe'}</Text>
           <Text style={[styles.headerSub, { color: modelLoading ? theme.accent : isTyping ? theme.accent : theme.textSecondary }]} numberOfLines={1}>
             {modelLoading
               ? `Loading${loadProgress > 0 ? ` ${Math.round(loadProgress)}%` : '...'}`
               : isTyping
               ? `Generating… ${genElapsed}s`
-              : modelName}
+              : `${modelName} ▾`}
           </Text>
-        </View>
+        </TouchableOpacity>
         <View style={styles.headerRight}>
           <TouchableOpacity
             style={[styles.modeToggle, { backgroundColor: fastMode ? theme.accent + '22' : theme.card, borderColor: fastMode ? theme.accent : theme.border }]}
@@ -441,6 +456,21 @@ export default function ChatScreen() {
           </>
         )}
       </KeyboardAvoidingView>
+
+      <InlineTextPicker
+        visible={pickerVisible}
+        allTextModels={AVAILABLE_MODELS.filter(m => m.modelType === 'text')}
+        downloadedModels={downloadedModels.filter(m => m.modelType === 'text')}
+        activeModelId={activeStorageModelId}
+        onSelect={async (model) => {
+          await setDefaultModelId(model.id);
+          loadTextModel(model.id);
+        }}
+        onGetModel={(modelId) => {
+          navigation.navigate('Download', { modelId, returnTo: 'Scribe', returnParams: {} });
+        }}
+        onClose={() => setPickerVisible(false)}
+      />
     </View>
   );
 }

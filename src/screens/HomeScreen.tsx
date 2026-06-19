@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated,
-  Dimensions,
+  Dimensions, Alert,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getTheme } from '../theme';
@@ -90,14 +90,13 @@ export default function HomeScreen() {
     }).catch(() => {});
   }, []));
 
-  const bestTextModel = (): DownloadedModel | undefined =>
-    downloadedModels.find(m => m.id === MODEL_KEYS.TEXT_HEALTH)
-    ?? downloadedModels.find(m => m.modelType === 'text');
+  const hasAnyTextModel = (): boolean =>
+    downloadedModels.some(m => m.modelType === 'text');
 
   const getStatus = (mod: Module): ModelStatus => {
     if (!mod.modelKey) return 'ready';
     if (mod.modelKey === TEXT_MODEL_KEY) {
-      return bestTextModel() ? 'ready' : 'needs-download';
+      return hasAnyTextModel() ? 'ready' : 'needs-download';
     }
     const dm = downloadedModels.find(m => m.id === mod.modelKey);
     if (!dm) return 'needs-download';
@@ -105,15 +104,9 @@ export default function HomeScreen() {
     return 'ready';
   };
 
-  const getModuleLabel = (mod: Module): string => {
-    if (mod.modelKey !== TEXT_MODEL_KEY) return mod.label;
-    const tm = bestTextModel();
-    return tm ? tm.name : 'No model';
-  };
-
   const enterModule = async (mod: Module) => {
     if (mod.id === 'Relay') {
-      navigation.navigate(mod.screen);
+      Alert.alert('Coming Soon', 'Peek Relay is under development. Stay tuned.');
       return;
     }
     const status = getStatus(mod);
@@ -181,7 +174,7 @@ export default function HomeScreen() {
               <View style={[styles.cardIcon, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
                 {mod.icon(theme.text)}
               </View>
-              <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>{getModuleLabel(mod)}</Text>
+              <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>{mod.label}</Text>
               <Text style={[styles.cardTitle, { color: theme.text }]}>{mod.title}</Text>
               <Text style={[styles.cardDesc, { color: theme.textSecondary }]} numberOfLines={2}>{mod.desc}</Text>
               {mod.modelKey ? statusBadge(mod) : null}
@@ -189,13 +182,13 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        {/* Full-width relay card */}
+        {/* Full-width relay card — dimmed, teaser only */}
         {full.map((mod) => (
           <TouchableOpacity
             key={mod.id}
-            style={[styles.cardFull, { backgroundColor: theme.card, borderColor: theme.border }]}
+            style={[styles.cardFull, { backgroundColor: theme.card, borderColor: theme.border, opacity: 0.45 }]}
             onPress={() => enterModule(mod)}
-            activeOpacity={0.72}
+            activeOpacity={0.9}
           >
             <View style={[styles.cardIcon, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
               {mod.icon(theme.text)}

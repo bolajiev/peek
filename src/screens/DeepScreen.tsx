@@ -12,13 +12,15 @@ import { unzipSync, strFromU8 } from 'fflate';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext, newRagWorkspace, closeRagWorkspace } from '../utils/ragService';
-import { syncModelsFromDisk, getSettings, getDefaultModelId, toPath, saveDeepSession } from '../utils/storage';
+import { syncModelsFromDisk, getSettings, getDefaultModelId, setDefaultModelId, toPath, saveDeepSession } from '../utils/storage';
 import { completion, cancel, loadModel, unloadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
-import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
+import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS } from '../utils/models';
 import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
+import InlineTextPicker from '../components/InlineTextPicker';
+import { DownloadedModel } from '../types';
 
 type Phase = 'idle' | 'ingesting' | 'ready' | 'thinking';
 
@@ -47,6 +49,10 @@ export default function DeepScreen() {
   const [llmProgress, setLlmProgress] = useState(0);
   const [noModel, setNoModel] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [downloadedModels, setDownloadedModels] = useState<DownloadedModel[]>([]);
+  const [activeStorageModelId, setActiveStorageModelId] = useState<string | null>(null);
+  const [llmModelName, setLlmModelName] = useState('');
   const embedIdRef = useRef<string>('');
   const ragWorkspaceRef = useRef<string>('');
   const currentRunRef = useRef<any>(null);
@@ -83,12 +89,15 @@ export default function DeepScreen() {
     };
   }, []);
 
-  const loadLlm = async () => {
+  const loadLlm = async (forceModelId?: string) => {
     setLlmLoading(true);
     setLlmProgress(0);
+    setNoModel(false);
+    setLoadError(null);
     try {
       const synced = await syncModelsFromDisk();
-      const defaultId = await getDefaultModelId();
+      setDownloadedModels(synced);
+      const defaultId = forceModelId ?? await getDefaultModelId();
       const preferredId = preselectedModelId ?? defaultId ?? MODEL_KEYS.TEXT_HEALTH;
       const model = synced.find(m => m.id === preferredId)
         ?? synced.find(m => m.id === MODEL_KEYS.TEXT_HEALTH)
@@ -96,6 +105,8 @@ export default function DeepScreen() {
         ?? synced.find(m => m.modelType === 'text')
         ?? synced[0];
       if (!model) { setNoModel(true); setLlmLoading(false); return; }
+      setLlmModelName(model.name);
+      setActiveStorageModelId(model.id);
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
       const modelConfig: any = { ctx_size: 4096, device };
@@ -270,10 +281,17 @@ export default function DeepScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <Text style={[styles.backBtn, { color: theme.text }]}>←</Text>
         </TouchableOpacity>
-        <View>
+        <TouchableOpacity
+          onPress={() => !llmLoading && setPickerVisible(true)}
+          activeOpacity={llmLoading ? 1 : 0.65}
+        >
           <Text style={[styles.headerTitle, { color: theme.text }]}>Peek Deep</Text>
-          {sourceTitle ? <Text style={[styles.headerSub, { color: theme.accent }]} numberOfLines={1}>{sourceTitle}</Text> : null}
-        </View>
+          <Text style={[styles.headerSub, { color: llmLoading ? theme.accent : sourceTitle ? theme.accent : theme.textSecondary }]} numberOfLines={1}>
+            {llmLoading
+              ? `Loading${llmProgress > 0 ? ` ${Math.round(llmProgress)}%` : '...'}`
+              : sourceTitle || `${llmModelName} ▾`}
+          </Text>
+        </TouchableOpacity>
         {phase !== 'idle'
           ? <TouchableOpacity onPress={reset} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={[styles.clearBtn, { color: theme.textSecondary }]}>Reset</Text>
@@ -418,6 +436,20 @@ export default function DeepScreen() {
           </View>
         </KeyboardAvoidingView>
       )}
+      <InlineTextPicker
+        visible={pickerVisible}
+        allTextModels={AVAILABLE_MODELS.filter(m => m.modelType === 'text')}
+        downloadedModels={downloadedModels.filter(m => m.modelType === 'text')}
+        activeModelId={activeStorageModelId}
+        onSelect={async (model) => {
+          await setDefaultModelId(model.id);
+          loadLlm(model.id);
+        }}
+        onGetModel={(modelId) => {
+          navigation.navigate('Download', { modelId, returnTo: 'Deep', returnParams: {} });
+        }}
+        onClose={() => setPickerVisible(false)}
+      />
     </Animated.View>
   );
 }
