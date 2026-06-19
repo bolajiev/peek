@@ -441,3 +441,30 @@ export async function getLensHistory(): Promise<LensScanRecord[]> {
   } catch { return []; }
 }
 
+// ── Deep session history ──────────────────────────────────────────────────────
+
+const DEEP_HISTORY_KEY = '@peek_deep_history';
+
+export interface DeepSessionRecord {
+  id: string;
+  docName: string;
+  firstQuestion: string;
+  createdAt: string;
+}
+
+export async function saveDeepSession(record: DeepSessionRecord): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(DEEP_HISTORY_KEY);
+    const list: DeepSessionRecord[] = raw ? JSON.parse(raw) : [];
+    list.unshift(record);
+    await AsyncStorage.setItem(DEEP_HISTORY_KEY, JSON.stringify(list.slice(0, 50)));
+  } catch {}
+}
+
+export async function getDeepHistory(): Promise<DeepSessionRecord[]> {
+  try {
+    const raw = await AsyncStorage.getItem(DEEP_HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+

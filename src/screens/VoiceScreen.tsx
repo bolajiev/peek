@@ -192,7 +192,8 @@ export default function VoiceScreen() {
           { role: 'user', content: transcript },
         ],
         stream: true,
-        generationParams: { predict: 350, temp: 0.3, top_k: 20 },
+        captureThinking: true,
+        generationParams: { predict: 500, temp: 0.3, top_k: 20 },
       });
 
       for await (const ev of run.events) {
@@ -200,10 +201,11 @@ export default function VoiceScreen() {
           out += (ev as any).text;
           if (firstToken) {
             firstToken = false;
-            setPhase('transcript'); // show transcript view immediately when streaming starts
+            setPhase('transcript');
           }
           setSummary(out + '▍');
         }
+        // thinkingDelta intentionally ignored — keeps thinking out of summary
       }
       setSummary(out.trim() || "Couldn't summarize. Transcript is still saved.");
     } catch (e) {
@@ -344,7 +346,7 @@ export default function VoiceScreen() {
           {/* Continue in Chat */}
           <TouchableOpacity
             style={[styles.chatBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
-            onPress={() => navigation.navigate('Scribe', { mode: 'document', seedQuery: `Transcript:\n\n${transcript}` })}
+            onPress={() => navigation.navigate('ScribeChat', { mode: 'chat', seedQuery: `Transcript:\n\n${transcript}` })}
             activeOpacity={0.75}
           >
             <Text style={[styles.chatBtnText, { color: theme.accent }]}>Continue in Chat →</Text>

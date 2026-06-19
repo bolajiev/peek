@@ -48,7 +48,7 @@ export default function ResultScreen() {
   }, []);
 
   const continueInChat = () => {
-    navigation.navigate('Scribe', {
+    navigation.navigate('ScribeChat', {
       mode: 'chat',
       seedQuery: params.query ? `Re: "${params.query}"` : undefined,
       seedAnswer: params.text,

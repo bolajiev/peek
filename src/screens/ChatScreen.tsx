@@ -408,7 +408,18 @@ function MessageBubble({ msg, theme, onToggleThinking, onOpenFile }: {
           <View style={[styles.aiBubble, { backgroundColor: theme.card }]}>
             {msg.imagePath && <Image source={{ uri: msg.imagePath }} style={styles.bubbleImage} />}
             {msg.streaming ? (
-              <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}▍</Text>
+              msg.text ? (
+                // Content is streaming — show it
+                <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}▍</Text>
+              ) : msg.thinking ? (
+                // Still in thinking phase — show thinking live so user sees activity
+                <View style={styles.thinkingLive}>
+                  <Text style={[styles.thinkingLiveLabel, { color: theme.accent }]}>Thinking…</Text>
+                  <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={6}>{msg.thinking}▍</Text>
+                </View>
+              ) : (
+                <Text style={[styles.bubbleText, { color: theme.textSecondary }]}>▍</Text>
+              )
             ) : msg.text ? (
               <MarkdownText color={theme.text} fontSize={15} lineHeight={22}>
                 {msg.text}
@@ -569,6 +580,9 @@ const styles = StyleSheet.create({
   sendBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
   sendIcon: { fontSize: 18, fontWeight: '700' },
   stopSquare: { width: 14, height: 14, borderRadius: 2 },
+  thinkingLive: { gap: 6 },
+  thinkingLiveLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
+  thinkingLiveText: { fontSize: 12, lineHeight: 18, fontStyle: 'italic' },
   fileCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     borderRadius: 12, borderWidth: 1, padding: 12, marginTop: 4,

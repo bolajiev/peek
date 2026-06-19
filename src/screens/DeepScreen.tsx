@@ -10,7 +10,7 @@ import { Paths, File, Directory } from 'expo-file-system';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext, newRagWorkspace, closeRagWorkspace } from '../utils/ragService';
-import { syncModelsFromDisk, getSettings, getDefaultModelId, toPath } from '../utils/storage';
+import { syncModelsFromDisk, getSettings, getDefaultModelId, toPath, saveDeepSession } from '../utils/storage';
 import { completion, cancel, loadModel, unloadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
 import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
@@ -47,6 +47,7 @@ export default function DeepScreen() {
   const embedIdRef = useRef<string>('');
   const ragWorkspaceRef = useRef<string>('');
   const currentRunRef = useRef<any>(null);
+  const sessionSavedRef = useRef(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
 
@@ -119,7 +120,7 @@ export default function DeepScreen() {
         throw new Error('File appears empty or too short to analyze. Only plain text files are supported.');
       }
 
-      const truncated = content.slice(0, 20000);
+      const truncated = content.slice(0, 40000);
 
       if (ragWorkspaceRef.current) {
         await closeRagWorkspace(ragWorkspaceRef.current).catch(() => {});
@@ -154,6 +155,11 @@ export default function DeepScreen() {
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setPhase('thinking');
+
+    if (!sessionSavedRef.current) {
+      sessionSavedRef.current = true;
+      saveDeepSession({ id: Date.now().toString(), docName: sourceTitle, firstQuestion: q, createdAt: new Date().toISOString() });
+    }
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
     const placeholderId = 'ai-' + Date.now();

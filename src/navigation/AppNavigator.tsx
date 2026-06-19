@@ -25,6 +25,7 @@ import ModelsScreen from '../screens/ModelsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import DownloadScreen from '../screens/DownloadScreen';
 import ScribeHubScreen from '../screens/ScribeHubScreen';
+import DeepHubScreen from '../screens/DeepHubScreen';
 import FilePreviewScreen from '../screens/FilePreviewScreen';
 import Sidebar from '../components/Sidebar';
 
@@ -126,7 +127,8 @@ export default function AppNavigator() {
           <Stack.Screen name="Voice" component={VoiceScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Scribe" component={ScribeHubScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="ScribeChat" component={ChatScreen} options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="Deep" component={DeepScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="Deep" component={DeepHubScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="DeepResearch" component={DeepScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Relay" component={RelayScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="QuickChat" component={QuickChatScreen} options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="History" component={HistoryScreen} options={{ animation: 'slide_from_right' }} />
