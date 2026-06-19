@@ -6,6 +6,7 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Paths, File } from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
+import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { loadModel, unloadModel, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { getTheme } from '../theme';
@@ -14,6 +15,7 @@ import { getSettings, syncModelsFromDisk, getDefaultModelId, addHistoryItem, upd
 import { isVisionModel } from '../utils/models';
 import { logInference } from '../utils/auditLogger';
 import { ModelInfo } from '../types';
+import PeekLoader from '../components/PeekLoader';
 
 // Short, directive prompt — fewer prompt tokens = faster TTFT
 const SYSTEM_PROMPT = `You are Peek, a private on-device AI with vision. Answer in 2-4 sentences. Be direct and specific about what you see.`;
@@ -229,6 +231,7 @@ export default function ScanScreen() {
 
   const handleCapture = async () => {
     if (!cameraRef.current || isAnalyzing) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Animated.sequence([
       Animated.timing(captureScale, { toValue: 0.88, duration: 80, useNativeDriver: true }),
       Animated.spring(captureScale, { toValue: 1, useNativeDriver: true, friction: 4 }),
@@ -305,8 +308,7 @@ export default function ScanScreen() {
         {isAnalyzing && (
           <View style={styles.analyzeOverlay}>
             {previewUri && <Image source={{ uri: previewUri }} style={styles.previewThumb} />}
-            <ActivityDots color={theme.accent} />
-            <Text style={[styles.analyzeText, { color: '#fff' }]}>{analysisText}</Text>
+            <PeekLoader label={analysisText} />
           </View>
         )}
       </CameraView>
@@ -343,24 +345,6 @@ export default function ScanScreen() {
   );
 }
 
-function ActivityDots({ color }: { color: string }) {
-  const dots = [useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current];
-  useEffect(() => {
-    dots.forEach((d, i) => {
-      Animated.loop(Animated.sequence([
-        Animated.delay(i * 130),
-        Animated.timing(d, { toValue: -6, duration: 260, useNativeDriver: true }),
-        Animated.timing(d, { toValue: 0, duration: 260, useNativeDriver: true }),
-        Animated.delay(480),
-      ])).start();
-    });
-  }, []);
-  return (
-    <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
-      {dots.map((d, i) => <Animated.View key={i} style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: color, transform: [{ translateY: d }] }} />)}
-    </View>
-  );
-}
 
 async function findModel(preselectedId?: string): Promise<ModelInfo | null> {
   const downloaded = await syncModelsFromDisk();

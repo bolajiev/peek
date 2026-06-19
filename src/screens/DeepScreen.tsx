@@ -19,6 +19,8 @@ import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS } from '../utils/models';
 import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
+import ResultActions from '../components/ResultActions';
+import PeekLoader from '../components/PeekLoader';
 import InlineTextPicker from '../components/InlineTextPicker';
 import { DownloadedModel } from '../types';
 
@@ -392,6 +394,7 @@ export default function DeepScreen() {
                 {msg.role === 'assistant' && msg.text ? (
                   <View style={styles.bubbleActions}>
                     <CopyButton text={msg.text} color={theme.textSecondary} size={11} />
+                    <ResultActions text={msg.text} title={`peek-deep-${Date.now()}`} theme={theme} compact />
                   </View>
                 ) : null}
               </View>
@@ -399,7 +402,7 @@ export default function DeepScreen() {
             {phase === 'thinking' && messages[messages.length - 1]?.role !== 'assistant' && (
               <View style={[styles.turn, styles.turnLeft]}>
                 <View style={[styles.bubble, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1, borderBottomLeftRadius: 4 }]}>
-                  <ThinkingDots color={theme.accent} />
+                  <PeekLoader size={32} />
                 </View>
               </View>
             )}
@@ -454,28 +457,6 @@ export default function DeepScreen() {
   );
 }
 
-function ThinkingDots({ color }: { color: string }) {
-  const dots = [useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current];
-  useEffect(() => {
-    const anims = dots.map((d, i) =>
-      Animated.loop(Animated.sequence([
-        Animated.delay(i * 140),
-        Animated.timing(d, { toValue: -6, duration: 250, useNativeDriver: true }),
-        Animated.timing(d, { toValue: 0, duration: 250, useNativeDriver: true }),
-        Animated.delay(580),
-      ]))
-    );
-    anims.forEach(a => a.start());
-    return () => anims.forEach(a => a.stop());
-  }, []);
-  return (
-    <View style={{ flexDirection: 'row', gap: 5, paddingVertical: 4 }}>
-      {dots.map((d, i) => (
-        <Animated.View key={i} style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: color, transform: [{ translateY: d }] }} />
-      ))}
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

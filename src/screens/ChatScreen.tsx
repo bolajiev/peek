@@ -9,6 +9,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
+import * as Haptics from 'expo-haptics';
 import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
@@ -197,6 +198,7 @@ export default function ChatScreen() {
   const handleSend = async () => {
     const text = input.trim();
     if (!text && !attachedImage) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setInput('');
     const imgPath = attachedImage;
     setAttachedImage(null);
@@ -269,12 +271,14 @@ export default function ChatScreen() {
       setMessages(prev => prev.map(m => m.id === placeholderId
         ? { ...m, text: displayText, streaming: false, generatedFile }
         : m));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const aiMsg: Message = { id: placeholderId, role: 'assistant', text: displayText, thinking: thinkingText || undefined, generatedFile };
       persistMessage(aiMsg);
       await updateLastMessage(convIdRef.current, displayText);
     } catch (err) {
       currentRunRef.current = null;
       if (!(err instanceof InferenceCancelledError)) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: 'Something went wrong. Try again.', streaming: false } : m));
       } else {
         setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, streaming: false } : m));

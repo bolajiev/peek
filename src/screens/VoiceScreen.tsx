@@ -1,9 +1,10 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated, ScrollView, Alert, AppState,
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
+import * as Haptics from 'expo-haptics';
 import { transcribeStream, completion, InferenceCancelledError } from '@qvac/sdk';
 import { whisperManager, llmManager } from '../utils/modelManager';
 import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
@@ -15,9 +16,13 @@ import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
 import { Paths, File, Directory } from 'expo-file-system';
 import { IconVoice, IconUpload, IconMic, IconBack } from '../components/Icons';
 import MarkdownText from '../components/MarkdownText';
-import CopyButton from '../components/CopyButton';
+import PeekLoader from '../components/PeekLoader';
+import ResultActions from '../components/ResultActions';
 
-type Phase = 'idle' | 'recording' | 'transcribing' | 'transcript' | 'summarizing';
+type Phase = 'idle' | 'recording' | 'transcribing' | 'transcript' | 'summarizing' | 'done';
+
+// Number of waveform bars
+const BAR_COUNT = 7;
 
 export default function VoiceScreen() {
   const navigation = useNavigation<any>();
@@ -29,31 +34,32 @@ export default function VoiceScreen() {
   const [summary, setSummary] = useState('');
   const [initError, setInitError] = useState<string | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [transcribeElapsed, setTranscribeElapsed] = useState(0);
   const [whisperReady, setWhisperReady] = useState(false);
+  const [loaderLabel, setLoaderLabel] = useState('Finalizing transcript…');
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const waveAnims = useRef(Array.from({ length: BAR_COUNT }, () => new Animated.Value(0.3))).current;
   const recordingRef = useRef<Audio.Recording | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const transcribeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const waveLoopsRef = useRef<Animated.CompositeAnimation[]>([]);
   const chunkQueueRef = useRef<string[]>([]);
   const chunkProcessingRef = useRef(false);
   const isStoppingRef = useRef(false);
   const liveScrollRef = useRef<ScrollView>(null);
   const phaseRef = useRef<Phase>('idle');
+  const autoSummarizeRef = useRef(false);
+  const transcriptRef = useRef('');
 
-  // Keep phaseRef in sync so AppState listener always sees current phase
   useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => { transcriptRef.current = transcript; }, [transcript]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }).start();
-    whisperManager.ensure()
-      .then(() => setWhisperReady(true))
-      .catch(() => {});
-    const appStateSub = AppState.addEventListener('change', state => {
+    whisperManager.ensure().then(() => setWhisperReady(true)).catch(() => {});
+    const sub = AppState.addEventListener('change', state => {
       const p = phaseRef.current;
       if (state === 'background' && (p === 'recording' || p === 'transcribing' || p === 'summarizing')) {
         showRunningNotification('Peek Voice');
@@ -62,19 +68,51 @@ export default function VoiceScreen() {
       }
     });
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (chunkTimerRef.current) clearInterval(chunkTimerRef.current);
-      if (transcribeTimerRef.current) clearInterval(transcribeTimerRef.current);
+      clearTimers();
       recordingRef.current?.stopAndUnloadAsync().catch(() => {});
-      appStateSub.remove();
+      sub.remove();
       clearInferenceNotifications();
     };
   }, []);
 
+  // Auto-summarize when transcript phase is set and flag is armed
+  useEffect(() => {
+    if (phase === 'transcript' && autoSummarizeRef.current && transcriptRef.current) {
+      autoSummarizeRef.current = false;
+      handleSummarize();
+    }
+  }, [phase]);
+
+  const clearTimers = () => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (chunkTimerRef.current) { clearInterval(chunkTimerRef.current); chunkTimerRef.current = null; }
+  };
+
+  // ── Waveform ──────────────────────────────────────────────
+  const WAVE_PERIODS = [320, 260, 200, 280, 240, 300, 220];
+
+  const startWave = () => {
+    waveLoopsRef.current = waveAnims.map((anim, i) => {
+      const period = WAVE_PERIODS[i];
+      const loop = Animated.loop(Animated.sequence([
+        Animated.timing(anim, { toValue: 0.15 + (i % 3) * 0.3, duration: period, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0.5 + (i % 2) * 0.4, duration: period, useNativeDriver: true }),
+      ]));
+      loop.start();
+      return loop;
+    });
+  };
+
+  const stopWave = () => {
+    waveLoopsRef.current.forEach(l => l.stop());
+    waveAnims.forEach(a => a.setValue(0.3));
+  };
+
+  // ── REC pulse ─────────────────────────────────────────────
   const startPulse = () => {
     pulseLoopRef.current = Animated.loop(Animated.sequence([
-      Animated.timing(pulseAnim, { toValue: 1.15, duration: 500, useNativeDriver: true }),
-      Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1.4, duration: 600, useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
     ]));
     pulseLoopRef.current.start();
   };
@@ -84,19 +122,18 @@ export default function VoiceScreen() {
     pulseAnim.setValue(1);
   };
 
+  // ── Chunk handling ────────────────────────────────────────
   const saveChunkToDir = async (cacheUri: string): Promise<string | null> => {
     try {
-      const recsDir = new Directory(Paths.document, 'peek', 'recordings');
-      recsDir.create({ intermediates: true, idempotent: true });
-      const dest = new File(recsDir, `chunk_${Date.now()}.m4a`);
+      const dir = new Directory(Paths.document, 'peek', 'recordings');
+      dir.create({ intermediates: true, idempotent: true });
+      const dest = new File(dir, `chunk_${Date.now()}.m4a`);
       new File(cacheUri).copy(dest);
       return dest.exists ? dest.uri : cacheUri;
-    } catch {
-      return cacheUri;
-    }
+    } catch { return cacheUri; }
   };
 
-  const processChunkQueue = async () => {
+  const processChunkQueue = useCallback(async () => {
     if (chunkProcessingRef.current) return;
     chunkProcessingRef.current = true;
     const wId = await whisperManager.ensure().catch(() => null);
@@ -109,7 +146,11 @@ export default function VoiceScreen() {
         let text = '';
         for await (const chunk of gen) { text += chunk; }
         if (text.trim()) {
-          setTranscript(prev => (prev ? prev + ' ' : '') + text.trim());
+          setTranscript(prev => {
+            const next = (prev ? prev + ' ' : '') + text.trim();
+            transcriptRef.current = next;
+            return next;
+          });
           setTimeout(() => liveScrollRef.current?.scrollToEnd({ animated: true }), 80);
         }
       } catch {}
@@ -120,39 +161,36 @@ export default function VoiceScreen() {
       isStoppingRef.current = false;
       setPhase('transcript');
     }
-  };
+  }, []);
 
   const rotateChunk = async () => {
     const rec = recordingRef.current;
     if (!rec) return;
-
-    // Stop current chunk
     await rec.stopAndUnloadAsync().catch(() => {});
     const cacheUri = rec.getURI();
     recordingRef.current = null;
-
-    // Start next recording immediately
     try {
       const newRec = new Audio.Recording();
       await newRec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       await newRec.startAsync();
       recordingRef.current = newRec;
     } catch {}
-
-    // Queue finished chunk
     if (cacheUri) {
-      const savedUri = await saveChunkToDir(cacheUri);
-      if (savedUri) {
-        chunkQueueRef.current.push(savedUri);
-        processChunkQueue();
-      }
+      const saved = await saveChunkToDir(cacheUri);
+      if (saved) { chunkQueueRef.current.push(saved); processChunkQueue(); }
     }
   };
 
+  // ── Record ────────────────────────────────────────────────
   const handleRecord = async () => {
     if (phase === 'recording') { await stopRecording(); return; }
     const { granted } = await Audio.requestPermissionsAsync();
-    if (!granted) { Alert.alert('Permission needed', 'Microphone access is required to record.'); return; }
+    if (!granted) {
+      Alert.alert('Permission needed', 'Microphone access is required to record.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
     const rec = new Audio.Recording();
     await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
@@ -168,45 +206,51 @@ export default function VoiceScreen() {
     chunkTimerRef.current = setInterval(rotateChunk, 5000);
     setPhase('recording');
     startPulse();
+    startWave();
   };
 
   const stopRecording = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     stopPulse();
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    if (chunkTimerRef.current) { clearInterval(chunkTimerRef.current); chunkTimerRef.current = null; }
-
+    stopWave();
+    clearTimers();
     const rec = recordingRef.current;
     recordingRef.current = null;
-
     if (rec) {
       await rec.stopAndUnloadAsync().catch(() => {});
       const cacheUri = rec.getURI();
       if (cacheUri) {
-        const savedUri = await saveChunkToDir(cacheUri);
-        if (savedUri) chunkQueueRef.current.push(savedUri);
+        const saved = await saveChunkToDir(cacheUri);
+        if (saved) chunkQueueRef.current.push(saved);
       }
     }
-
+    autoSummarizeRef.current = true;
     isStoppingRef.current = true;
-
+    setLoaderLabel('Finalizing transcript…');
     if (chunkQueueRef.current.length === 0 && !chunkProcessingRef.current) {
       isStoppingRef.current = false;
-      setPhase('transcript');
+      if (transcriptRef.current) {
+        setPhase('transcript');
+      } else {
+        setPhase('transcript');
+      }
     } else {
       setPhase('transcribing');
       processChunkQueue();
     }
   };
 
+  // ── Upload ────────────────────────────────────────────────
   const handleUpload = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
     if (result.canceled || !result.assets?.[0]) return;
     const picked = result.assets[0];
     try {
-      const recsDir = new Directory(Paths.document, 'peek', 'recordings');
-      recsDir.create({ intermediates: true, idempotent: true });
+      const dir = new Directory(Paths.document, 'peek', 'recordings');
+      dir.create({ intermediates: true, idempotent: true });
       const ext = picked.name?.split('.').pop() ?? 'm4a';
-      const destFile = new File(recsDir, `upload_${Date.now()}.${ext}`);
+      const destFile = new File(dir, `upload_${Date.now()}.${ext}`);
       new File(picked.uri).copy(destFile);
       await doTranscribeFile(destFile.exists ? destFile.uri : picked.uri);
     } catch {
@@ -216,31 +260,31 @@ export default function VoiceScreen() {
 
   const doTranscribeFile = async (uri: string) => {
     setPhase('transcribing');
+    setLoaderLabel('Transcribing…');
     setTranscript('');
     setSummary('');
-    setTranscribeElapsed(0);
-    transcribeTimerRef.current = setInterval(() => setTranscribeElapsed(t => t + 1), 1000);
+    autoSummarizeRef.current = true;
     try {
       const wId = await whisperManager.ensure();
       let text = '';
-      let firstChunk = true;
       const gen = transcribeStream({ modelId: wId, audioChunk: toPath(uri) });
-      for await (const chunk of gen) {
-        text += chunk;
-        if (firstChunk) { firstChunk = false; setPhase('transcript'); }
-        setTranscript(text);
-      }
-      if (!text.trim()) { setTranscript('(No speech detected)'); setPhase('transcript'); }
+      for await (const chunk of gen) { text += chunk; }
+      const clean = text.trim() || '(No speech detected)';
+      transcriptRef.current = clean;
+      setTranscript(clean);
+      setPhase('transcript');
     } catch (err: any) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setInitError(err?.message || 'Transcription failed');
       setPhase('idle');
-    } finally {
-      if (transcribeTimerRef.current) { clearInterval(transcribeTimerRef.current); transcribeTimerRef.current = null; }
     }
   };
 
+  // ── Summarize (auto-triggered) ────────────────────────────
   const handleSummarize = async () => {
-    if (!transcript) return;
+    const currentTranscript = transcriptRef.current;
+    if (!currentTranscript || currentTranscript === '(No speech detected)') return;
+    setLoaderLabel('Summarizing…');
     setPhase('summarizing');
     setSummary('');
     try {
@@ -248,66 +292,60 @@ export default function VoiceScreen() {
       const textModel = synced.find(m => m.id === MODEL_KEYS.TEXT_HEALTH)
         ?? synced.find(m => m.id === MODEL_KEYS.TEXT_FAST)
         ?? synced.find(m => m.modelType === 'text');
-
       if (!textModel) {
-        setPhase('transcript');
-        Alert.alert(
-          'Text model needed',
-          'Download a text model (MedPsy or Qwen 2.5) to use AI summarization.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Download', onPress: () => navigation.navigate('Download', { modelId: MODEL_KEYS.TEXT_HEALTH, returnTo: 'Voice', returnParams: {} }) },
-          ],
-        );
+        setPhase('done');
         return;
       }
-
       const settings = await getSettings();
       const modelConfig: any = { ctx_size: 1024, device: settings.accelerator === 'gpu' ? 'gpu' : 'cpu' };
       const mid = await llmManager.ensure(textModel, modelConfig);
-
       let out = '';
-      let firstToken = true;
       const run = completion({
         modelId: mid,
         history: [
           { role: 'system', content: SYSTEM_PROMPTS.voice },
-          { role: 'user', content: transcript },
+          { role: 'user', content: currentTranscript },
         ],
         stream: true,
-        captureThinking: true,
-        generationParams: { predict: 500, temp: 0.3, top_k: 20 },
+        captureThinking: false,
+        generationParams: { predict: 300, temp: 0.3, top_k: 20 },
       });
-
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') {
           out += (ev as any).text;
-          if (firstToken) {
-            firstToken = false;
-            setPhase('transcript');
-          }
           setSummary(out + '▍');
         }
-        // thinkingDelta intentionally ignored — keeps thinking out of summary
       }
-      setSummary(out.trim() || "Couldn't summarize. Transcript is still saved.");
+      setSummary(out.trim() || '');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (AppState.currentState !== 'active') showDoneNotification('Peek Voice');
       else clearInferenceNotifications();
     } catch (e) {
-      if (!(e instanceof InferenceCancelledError)) setSummary("Couldn't summarize. Transcript is still saved.");
-      setPhase('transcript');
+      if (!(e instanceof InferenceCancelledError)) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
       clearInferenceNotifications();
+    } finally {
+      setPhase('done');
     }
   };
 
   const reset = () => {
-    setTranscript(''); setSummary(''); setInitError(null); setPhase('idle');
+    stopPulse();
+    stopWave();
+    clearTimers();
+    setTranscript('');
+    setSummary('');
+    setInitError(null);
+    transcriptRef.current = '';
+    autoSummarizeRef.current = false;
+    setPhase('idle');
   };
-
-  const wordCount = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
   const fmtTime = (s: number) =>
     `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
+
+  const isWorking = phase === 'recording' || phase === 'transcribing' || phase === 'summarizing';
 
   return (
     <Animated.View style={[styles.root, { backgroundColor: theme.background, opacity: fadeAnim }]}>
@@ -318,7 +356,7 @@ export default function VoiceScreen() {
         </TouchableOpacity>
         <View style={styles.brand}>
           <View style={[styles.brandDot, { backgroundColor: theme.accent }]} />
-          <Text style={[styles.brandName, { color: theme.text }]}>Peek</Text>
+          <Text style={[styles.brandName, { color: theme.text }]}>Peek Voice</Text>
         </View>
         {phase !== 'idle'
           ? <TouchableOpacity onPress={reset} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -334,11 +372,11 @@ export default function VoiceScreen() {
             <View style={[styles.heroIcon, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
               <IconVoice size={26} color={theme.text} strokeWidth={1.6} />
             </View>
-            <Text style={[styles.title, { color: theme.text }]}>Peek Voice</Text>
-            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Record or upload audio. Get a transcript and summary.</Text>
-            {initError
-              ? <Text selectable style={[styles.errText, { color: theme.error }]}>{initError}</Text>
-              : null}
+            <Text style={[styles.heroTitle, { color: theme.text }]}>Peek Voice</Text>
+            <Text style={[styles.heroSub, { color: theme.textSecondary }]}>
+              Record or upload audio — get a transcript and summary automatically.
+            </Text>
+            {initError && <Text style={[styles.errText, { color: theme.error }]}>{initError}</Text>}
           </View>
 
           <View style={styles.body}>
@@ -347,13 +385,13 @@ export default function VoiceScreen() {
               onPress={handleRecord}
               activeOpacity={0.85}
             >
-              <View style={[styles.primaryActionIcon, { backgroundColor: 'rgba(0,0,0,0.15)' }]}>
+              <View style={[styles.actionIconBox, { backgroundColor: 'rgba(0,0,0,0.15)' }]}>
                 <IconMic size={20} color={theme.accentFg} />
               </View>
               <View style={styles.actionText}>
                 <Text style={[styles.actionTitle, { color: theme.accentFg }]}>Record Now</Text>
                 <Text style={[styles.actionSub, { color: theme.accentFg + 'BB' }]}>
-                  {whisperReady ? 'Whisper ready · tap to start' : 'Loading Whisper model…'}
+                  {whisperReady ? 'Whisper ready · tap to start' : 'Loading Whisper…'}
                 </Text>
               </View>
               {whisperReady && <View style={[styles.readyDot, { backgroundColor: theme.accentFg }]} />}
@@ -364,11 +402,11 @@ export default function VoiceScreen() {
               onPress={handleUpload}
               activeOpacity={0.72}
             >
-              <View style={[styles.actionIcon, { backgroundColor: theme.cardAlt }]}>
+              <View style={[styles.actionIconBox, { backgroundColor: theme.cardAlt }]}>
                 <IconUpload size={18} color={theme.text} />
               </View>
               <View style={styles.actionText}>
-                <Text style={[styles.actionTitle, { color: theme.text }]}>Upload Audio File</Text>
+                <Text style={[styles.actionTitle, { color: theme.text }]}>Upload Audio</Text>
                 <Text style={[styles.actionSub, { color: theme.textSecondary }]}>MP3, WAV, M4A supported</Text>
               </View>
             </TouchableOpacity>
@@ -376,39 +414,53 @@ export default function VoiceScreen() {
         </>
       )}
 
-      {/* ── Recording (with live transcript) ── */}
+      {/* ── Recording ── */}
       {phase === 'recording' && (
         <View style={styles.recordingPane}>
+          {/* Top bar with timer + stop */}
           <View style={[styles.recordBar, { borderBottomColor: theme.border }]}>
-            <Animated.View style={[styles.recordRingSmall, { borderColor: theme.error, transform: [{ scale: pulseAnim }] }]}>
-              <View style={[styles.recordSquareSmall, { backgroundColor: theme.error }]} />
-            </Animated.View>
-            <Text style={[styles.recordTimeSmall, { color: theme.text }]}>{fmtTime(recordingTime)}</Text>
-            <Text style={[styles.recordingLabel, { color: theme.error }]}>● REC</Text>
+            <View style={styles.recIndicator}>
+              <Animated.View
+                style={[styles.recDot, { backgroundColor: theme.error, transform: [{ scale: pulseAnim }] }]}
+              />
+              <Text style={[styles.recLabel, { color: theme.error }]}>REC</Text>
+            </View>
+            <Text style={[styles.recTimer, { color: theme.text }]}>{fmtTime(recordingTime)}</Text>
+            <View style={styles.waveformBox}>
+              {waveAnims.map((anim, i) => (
+                <Animated.View
+                  key={i}
+                  style={[
+                    styles.waveBar,
+                    { backgroundColor: theme.accent, transform: [{ scaleY: anim }] },
+                  ]}
+                />
+              ))}
+            </View>
             <TouchableOpacity
-              style={[styles.stopBtnSmall, { backgroundColor: theme.error }]}
+              style={[styles.stopBtn, { backgroundColor: theme.error }]}
               onPress={stopRecording}
               activeOpacity={0.85}
             >
-              <Text style={[styles.stopBtnText, { color: '#fff' }]}>Stop</Text>
+              <Text style={styles.stopBtnText}>Stop</Text>
             </TouchableOpacity>
           </View>
 
+          {/* Live transcript */}
           <ScrollView
             ref={liveScrollRef}
-            style={styles.liveTranscriptScroll}
-            contentContainerStyle={styles.liveTranscriptContent}
+            style={styles.liveScroll}
+            contentContainerStyle={styles.liveContent}
             showsVerticalScrollIndicator={false}
           >
             {transcript ? (
-              <Text style={[styles.liveTranscriptText, { color: theme.text }]}>
+              <Text style={[styles.liveText, { color: theme.text }]}>
                 {transcript}<Text style={{ color: theme.accent }}>▍</Text>
               </Text>
             ) : (
-              <View style={styles.liveEmptyState}>
-                <Text style={[styles.liveEmptyEmoji]}>🎙️</Text>
+              <View style={styles.liveEmpty}>
                 <Text style={[styles.liveEmptyText, { color: theme.textSecondary }]}>
-                  Speak now — words appear here every few seconds
+                  Speak now — transcript appears here
                 </Text>
               </View>
             )}
@@ -416,40 +468,70 @@ export default function VoiceScreen() {
         </View>
       )}
 
-      {/* ── Transcribing (final processing) ── */}
-      {phase === 'transcribing' && (
+      {/* ── Processing (transcribing or summarizing) ── */}
+      {(phase === 'transcribing' || phase === 'summarizing') && (
         <View style={styles.centeredPane}>
-          <ThinkDots color={theme.accent} />
-          <Text style={[styles.spinLabel, { color: theme.text }]}>Finalizing transcript…</Text>
-          <Text style={[styles.spinSub, { color: theme.textSecondary }]}>
-            Processing last segment · Whisper on-device
-          </Text>
+          <PeekLoader label={loaderLabel} />
         </View>
       )}
 
-      {/* ── Summarizing (waiting for first token) ── */}
-      {phase === 'summarizing' && (
-        <View style={styles.centeredPane}>
-          <ThinkDots color={theme.accent} />
-          <Text style={[styles.spinLabel, { color: theme.text }]}>Summarizing…</Text>
-        </View>
-      )}
-
-      {/* ── Transcript (+ streaming summary) ── */}
-      {phase === 'transcript' && (
-        <ScrollView style={styles.resultScroll} contentContainerStyle={styles.resultContent} showsVerticalScrollIndicator={false}>
+      {/* ── Done — transcript + summary ── */}
+      {(phase === 'transcript' || phase === 'done') && (
+        <ScrollView
+          style={styles.resultScroll}
+          contentContainerStyle={styles.resultContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Transcript section */}
           <View style={styles.sectionRow}>
             <Text style={[styles.sectionHead, { color: theme.textSecondary }]}>TRANSCRIPT</Text>
-            <View style={styles.sectionActions}>
-              <Text style={[styles.wordCountText, { color: theme.textSecondary }]}>
-                {wordCount(transcript)} words
-              </Text>
-              <CopyButton text={transcript} color={theme.textSecondary} size={11} />
-            </View>
+            <Text style={[styles.wordCount, { color: theme.textSecondary }]}>
+              {transcript.split(/\s+/).filter(Boolean).length} words
+            </Text>
           </View>
           <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <Text selectable style={[styles.resultText, { color: theme.text }]}>{transcript}</Text>
           </View>
+          <ResultActions
+            text={transcript}
+            title={`peek-transcript-${Date.now()}`}
+            theme={theme}
+          />
+
+          {/* Summary section */}
+          <View style={[styles.sectionRow, { marginTop: 24 }]}>
+            <Text style={[styles.sectionHead, { color: theme.textSecondary }]}>SUMMARY</Text>
+            {phase === 'done' && !summary && (
+              <Text style={[styles.wordCount, { color: theme.textSecondary }]}>No model</Text>
+            )}
+          </View>
+
+          {phase === 'done' && summary ? (
+            <>
+              <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <MarkdownText color={theme.text} fontSize={15} lineHeight={23}>{summary}</MarkdownText>
+              </View>
+              <ResultActions
+                text={summary}
+                title={`peek-summary-${Date.now()}`}
+                theme={theme}
+              />
+            </>
+          ) : phase === 'done' && !summary ? (
+            <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.resultText, { color: theme.textSecondary }]}>
+                Download a text model to enable AI summaries.
+              </Text>
+            </View>
+          ) : (
+            // Still summarizing — show streaming summary inline
+            <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.resultText, { color: theme.text }]}>
+                {summary || ''}
+                {!summary && <Text style={{ color: theme.accent }}>▍</Text>}
+              </Text>
+            </View>
+          )}
 
           {/* Continue in Chat */}
           <TouchableOpacity
@@ -460,60 +542,10 @@ export default function VoiceScreen() {
             <Text style={[styles.chatBtnText, { color: theme.accent }]}>Continue in Chat →</Text>
           </TouchableOpacity>
 
-          {summary ? (
-            <>
-              <View style={[styles.sectionRow, { marginTop: 20 }]}>
-                <Text style={[styles.sectionHead, { color: theme.textSecondary }]}>SUMMARY</Text>
-                {!summary.endsWith('▍') && <CopyButton text={summary} color={theme.textSecondary} size={11} />}
-              </View>
-              <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                {summary.endsWith('▍') ? (
-                  <Text style={[styles.resultText, { color: theme.text }]}>{summary}</Text>
-                ) : (
-                  <MarkdownText color={theme.text} fontSize={15} lineHeight={23}>{summary}</MarkdownText>
-                )}
-              </View>
-            </>
-          ) : (
-            <TouchableOpacity
-              style={[styles.summarizeBtn, { borderColor: theme.accent, backgroundColor: theme.accent + '14' }]}
-              onPress={handleSummarize}
-              activeOpacity={0.75}
-            >
-              <Text style={[styles.summarizeBtnText, { color: theme.accent }]}>Summarize with AI</Text>
-            </TouchableOpacity>
-          )}
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
     </Animated.View>
-  );
-}
-
-function ThinkDots({ color }: { color: string }) {
-  const dots = [
-    useRef(new Animated.Value(0)).current,
-    useRef(new Animated.Value(0)).current,
-    useRef(new Animated.Value(0)).current,
-  ];
-  useEffect(() => {
-    const anims = dots.map((d, i) =>
-      Animated.loop(Animated.sequence([
-        Animated.delay(i * 140),
-        Animated.timing(d, { toValue: -7, duration: 260, useNativeDriver: true }),
-        Animated.timing(d, { toValue: 0, duration: 260, useNativeDriver: true }),
-        Animated.delay(540),
-      ]))
-    );
-    anims.forEach(a => a.start());
-    return () => anims.forEach(a => a.stop());
-  }, []);
-  return (
-    <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
-      {dots.map((d, i) => (
-        <Animated.View key={i} style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color, transform: [{ translateY: d }] }} />
-      ))}
-    </View>
   );
 }
 
@@ -532,77 +564,66 @@ const styles = StyleSheet.create({
     width: 52, height: 52, borderRadius: 16, borderWidth: 1,
     justifyContent: 'center', alignItems: 'center', marginBottom: 10,
   },
-  title: { fontSize: 22, fontWeight: '700', letterSpacing: -0.4 },
-  subtitle: { fontSize: 14 },
+  heroTitle: { fontSize: 22, fontWeight: '700', letterSpacing: -0.4 },
+  heroSub: { fontSize: 14, lineHeight: 20 },
   errText: { fontSize: 12, marginTop: 4 },
   body: { flex: 1, padding: 20, gap: 12 },
   primaryAction: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     borderRadius: 16, padding: 18,
   },
-  primaryActionIcon: {
-    width: 42, height: 42, borderRadius: 12,
-    justifyContent: 'center', alignItems: 'center', flexShrink: 0,
-  },
-  readyDot: { width: 7, height: 7, borderRadius: 3.5, opacity: 0.8 },
   secondaryAction: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     borderRadius: 14, borderWidth: 1, padding: 16,
   },
-  actionIcon: {
-    width: 38, height: 38, borderRadius: 10,
+  actionIconBox: {
+    width: 42, height: 42, borderRadius: 12,
     justifyContent: 'center', alignItems: 'center', flexShrink: 0,
   },
   actionText: { flex: 1, gap: 3 },
   actionTitle: { fontSize: 14, fontWeight: '700' },
   actionSub: { fontSize: 12 },
-  centeredPane: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, gap: 12 },
+  readyDot: { width: 7, height: 7, borderRadius: 3.5, opacity: 0.8 },
+  // Recording
   recordingPane: { flex: 1 },
   recordBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1,
+    paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1,
   },
-  recordRingSmall: {
-    width: 32, height: 32, borderRadius: 16, borderWidth: 2,
-    justifyContent: 'center', alignItems: 'center',
+  recIndicator: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0 },
+  recDot: { width: 10, height: 10, borderRadius: 5 },
+  recLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  recTimer: { fontSize: 17, fontWeight: '300', letterSpacing: 1, minWidth: 52 },
+  waveformBox: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', height: 34, gap: 3,
   },
-  recordSquareSmall: { width: 10, height: 10, borderRadius: 2 },
-  recordTimeSmall: { fontSize: 18, fontWeight: '300', letterSpacing: 1, flex: 1 },
-  recordingLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-  stopBtnSmall: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
-  liveTranscriptScroll: { flex: 1 },
-  liveTranscriptContent: { padding: 20, flexGrow: 1 },
-  liveTranscriptText: { fontSize: 17, lineHeight: 28 },
-  liveEmptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, paddingTop: 60 },
-  liveEmptyEmoji: { fontSize: 40 },
-  liveEmptyText: { fontSize: 14, textAlign: 'center', lineHeight: 21, maxWidth: 260 },
-  recordRing: {
-    width: 100, height: 100, borderRadius: 50, borderWidth: 3,
-    justifyContent: 'center', alignItems: 'center', marginBottom: 8,
+  waveBar: {
+    width: 3, height: 30, borderRadius: 2, transformOrigin: 'center',
   },
-  recordSquare: { width: 28, height: 28, borderRadius: 6 },
-  recordTime: { fontSize: 40, fontWeight: '200', letterSpacing: 2 },
-  recordLabel: { fontSize: 14 },
-  stopBtn: { paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14, marginTop: 12 },
-  stopBtnText: { fontSize: 15, fontWeight: '700' },
-  spinLabel: { fontSize: 20, fontWeight: '700' },
-  spinSub: { fontSize: 13 },
+  stopBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, flexShrink: 0 },
+  stopBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  liveScroll: { flex: 1 },
+  liveContent: { padding: 20, flexGrow: 1 },
+  liveText: { fontSize: 17, lineHeight: 28 },
+  liveEmpty: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
+  liveEmptyText: { fontSize: 14, textAlign: 'center', lineHeight: 21 },
+  // Processing
+  centeredPane: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
+  // Result
   resultScroll: { flex: 1 },
-  resultContent: { padding: 20, gap: 8 },
-  sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  sectionActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  resultContent: { padding: 20, paddingTop: 16 },
+  sectionRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: 8,
+  },
   sectionHead: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase' },
-  wordCountText: { fontSize: 10, fontWeight: '500' },
+  wordCount: { fontSize: 10, fontWeight: '500' },
   resultBox: { borderRadius: 14, borderWidth: 1, padding: 16 },
   resultText: { fontSize: 15, lineHeight: 23 },
   chatBtn: {
     borderWidth: 1, borderRadius: 14, paddingVertical: 12,
-    alignItems: 'center', marginTop: 8,
+    alignItems: 'center', marginTop: 20,
   },
   chatBtnText: { fontSize: 14, fontWeight: '700' },
-  summarizeBtn: {
-    borderWidth: 1, borderRadius: 14, paddingVertical: 14,
-    alignItems: 'center', marginTop: 12,
-  },
-  summarizeBtnText: { fontSize: 15, fontWeight: '700' },
 });

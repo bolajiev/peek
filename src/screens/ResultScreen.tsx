@@ -3,9 +3,11 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Animated,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import * as Haptics from 'expo-haptics';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { saveLensScan } from '../utils/storage';
+import ResultActions from '../components/ResultActions';
 
 interface RouteParams {
   text: string;
@@ -144,10 +146,15 @@ export default function ResultScreen() {
                 </View>
               )}
 
+              {/* Result actions */}
+              {params.text && (
+                <ResultActions text={params.text} title={`peek-lens-${Date.now()}`} theme={theme} />
+              )}
+
               {/* Continue in Chat */}
               <TouchableOpacity
-                style={[styles.continueBtn, { backgroundColor: theme.accent }]}
-                onPress={continueInChat}
+                style={[styles.continueBtn, { backgroundColor: theme.accent, marginTop: 16 }]}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); continueInChat(); }}
                 activeOpacity={0.85}
               >
                 <Text style={[styles.continueBtnText, { color: theme.accentFg }]}>Continue in Chat</Text>
