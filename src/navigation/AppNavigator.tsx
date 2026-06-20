@@ -33,6 +33,7 @@ import Sidebar from '../components/Sidebar';
 import V2ChatScreen from '../screens/V2ChatScreen';
 import V2VoiceScreen from '../screens/V2VoiceScreen';
 import AIChatScreen from '../screens/AIChatScreen';
+import AIChatHubScreen from '../screens/AIChatHubScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -183,6 +184,7 @@ export default function AppNavigator() {
           <Stack.Screen name="FilePreview" component={FilePreviewScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="About" component={AboutScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="V2Chat" component={V2ChatScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="AIChatHub" component={AIChatHubScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="AIChat" component={AIChatScreen} options={{ animation: 'slide_from_right' }} />
         </Stack.Navigator>
       </NavigationContainer>

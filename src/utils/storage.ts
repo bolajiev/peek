@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   accelerator: 'cpu',
   responseLength: 'balanced',
   huggingFaceToken: '',
+  temperature: 0.7,
 };
 
 // App-private document storage — no runtime permission required on any platform.
@@ -161,6 +162,15 @@ export async function getAccelerator(): Promise<Accelerator> {
 
 export async function setAccelerator(accel: Accelerator): Promise<void> {
   await saveSettings({ accelerator: accel });
+}
+
+export async function getTemperature(): Promise<number> {
+  const settings = await getSettings();
+  return settings.temperature ?? 0.7;
+}
+
+export async function setTemperature(temp: number): Promise<void> {
+  await saveSettings({ temperature: temp });
 }
 
 export async function getResponseLength(): Promise<ResponseLength> {

@@ -11,7 +11,7 @@ import { showRunningNotification, showDoneNotification, clearInferenceNotificati
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getSettings, toPath, syncModelsFromDisk, saveVoiceSession } from '../utils/storage';
+import { getSettings, getTemperature, toPath, syncModelsFromDisk, saveVoiceSession } from '../utils/storage';
 import { SYSTEM_PROMPTS, MODEL_KEYS, stripThink, splitStream } from '../utils/models';
 import { Paths, File, Directory } from 'expo-file-system';
 import { IconVoice, IconUpload, IconMic, IconBack } from '../components/Icons';
@@ -296,6 +296,7 @@ export default function VoiceScreen() {
       const settings = await getSettings();
       const modelConfig: any = { ctx_size: 1024, device: settings.accelerator === 'gpu' ? 'gpu' : 'cpu' };
       const mid = await llmManager.ensure(textModel, modelConfig);
+      const temp = await getTemperature();
       let out = '';
       const run = completion({
         modelId: mid,
@@ -305,7 +306,7 @@ export default function VoiceScreen() {
         ],
         stream: true,
         captureThinking: false,
-        generationParams: { predict: 300, temp: 0.3, top_k: 20 },
+        generationParams: { predict: 512, temp, top_k: 20 },
       });
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') {

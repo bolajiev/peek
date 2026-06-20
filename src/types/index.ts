@@ -1,5 +1,5 @@
 export type UseCase = 'scan' | 'chat';
-export type ModuleId = 'lens' | 'voice' | 'scribe' | 'deep' | 'quickchat';
+export type ModuleId = 'lens' | 'voice' | 'scribe' | 'deep' | 'quickchat' | 'aichat';
 
 export interface ModelInfo {
   id: string;
@@ -78,4 +78,5 @@ export interface AppSettings {
   accelerator: Accelerator;
   responseLength: ResponseLength;
   huggingFaceToken: string;
+  temperature: number;
 }

@@ -8,7 +8,7 @@ import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme, useThemeToggle } from '../navigation/AppNavigator';
 import {
-  getSettings, setAccelerator, setResponseLength, clearAllData,
+  getSettings, setAccelerator, setResponseLength, clearAllData, setTemperature,
 } from '../utils/storage';
 import { Accelerator, ResponseLength } from '../types';
 
@@ -21,6 +21,7 @@ export default function SettingsScreen() {
 
   const [accelerator, setAccelState] = useState<Accelerator>('cpu');
   const [responseLength, setRespLength] = useState<ResponseLength>('balanced');
+  const [temperature, setTempState] = useState<number>(0.7);
   const [deviceModel, setDeviceModel] = useState('');
   const [deviceBrand, setDeviceBrand] = useState('');
   const [totalMemory, setTotalMemory] = useState('N/A');
@@ -34,6 +35,7 @@ export default function SettingsScreen() {
     const settings = await getSettings();
     setAccelState(settings.accelerator);
     setRespLength(settings.responseLength);
+    setTempState(settings.temperature ?? 0.7);
   };
 
   const loadDeviceInfo = () => {
@@ -51,6 +53,17 @@ export default function SettingsScreen() {
   const handleResponseLength = (value: ResponseLength) => {
     setRespLength(value);
     setResponseLength(value);
+  };
+
+  const TEMP_PRESETS = [
+    { label: 'Precise', value: 0.2, desc: 'Focused, less variation' },
+    { label: 'Balanced', value: 0.7, desc: 'Default' },
+    { label: 'Creative', value: 1.0, desc: 'More variety' },
+  ];
+
+  const handleTemperature = (value: number) => {
+    setTempState(value);
+    setTemperature(value);
   };
 
   const handleClearData = () => {
@@ -116,6 +129,28 @@ export default function SettingsScreen() {
               <OptionBtn label="Detailed" selected={responseLength === 'detailed'} onPress={() => handleResponseLength('detailed')} />
             </View>
           </View>
+        </View>
+
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Writing Style</Text>
+        <View style={[styles.card, { backgroundColor: theme.card }]}>
+          <Text style={[styles.rowLabel, { color: theme.text }]}>Temperature</Text>
+          <Text style={[styles.tempDesc, { color: theme.textSecondary }]}>
+            Controls how predictable vs. varied the output is. Lower = fewer repeats, higher = more creative.
+          </Text>
+          <View style={styles.optionsRow}>
+            {TEMP_PRESETS.map(p => (
+              <TouchableOpacity
+                key={p.label}
+                style={[styles.optionBtn, { borderColor: theme.border }, temperature === p.value && { backgroundColor: theme.accent }]}
+                onPress={() => handleTemperature(p.value)}
+              >
+                <Text style={[styles.optionText, { color: temperature === p.value ? theme.accentFg : theme.text }]}>{p.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={[styles.tempValue, { color: theme.textSecondary }]}>
+            {TEMP_PRESETS.find(p => p.value === temperature)?.desc ?? `Custom (${temperature.toFixed(1)})`}
+          </Text>
         </View>
 
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Device</Text>
@@ -184,4 +219,6 @@ const styles = StyleSheet.create({
   dangerBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1, marginTop: 16 },
   dangerText: { fontSize: 15, fontWeight: '700' },
   footer: { fontSize: 12, textAlign: 'center', marginTop: 20 },
+  tempDesc: { fontSize: 12, lineHeight: 17, marginBottom: 8 },
+  tempValue: { fontSize: 12, marginTop: 6 },
 });

@@ -61,7 +61,7 @@ const MODULES: Module[] = [
     modelKey: TEXT_MODEL_KEY,
   },
   {
-    id: 'Chat', screen: 'AIChat', label: 'AI Model', title: 'AI Chat',
+    id: 'Chat', screen: 'AIChatHub', label: 'AI Model', title: 'AI Chat',
     desc: 'Ask anything — questions, explanations, code, ideas',
     icon: (c) => <IconChat size={20} color={c} />,
     modelKey: TEXT_MODEL_KEY,

@@ -15,7 +15,7 @@ import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import {
-  syncModelsFromDisk, getSettings, getDefaultModelId, setDefaultModelId,
+  syncModelsFromDisk, getSettings, getDefaultModelId, setDefaultModelId, getTemperature,
   getConversations, saveConversation, getMessages,
   appendMessage, updateLastMessage, createConversationId, toPath,
 } from '../utils/storage';
@@ -26,7 +26,6 @@ import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
 import ModelGalleryPicker from '../components/ModelGalleryPicker';
 import MdPreviewPanel from '../components/MdPreviewPanel';
-import HtmlPreviewPanel from '../components/HtmlPreviewPanel';
 
 interface GeneratedFile { name: string; fileUri: string; artifactType: 'md' | 'html'; }
 
@@ -80,9 +79,6 @@ export default function ChatScreen() {
   const [mdPanelVisible, setMdPanelVisible] = useState(false);
   const [mdPanelSource, setMdPanelSource] = useState('');
   const [mdPanelFile, setMdPanelFile] = useState<GeneratedFile | undefined>();
-  const [htmlPanelVisible, setHtmlPanelVisible] = useState(false);
-  const [htmlPanelSource, setHtmlPanelSource] = useState('');
-  const [htmlPanelFile, setHtmlPanelFile] = useState<GeneratedFile | undefined>();
 
   const scrollRef = useRef<ScrollView>(null);
   const currentRunRef = useRef<any>(null);
@@ -246,11 +242,12 @@ export default function ChatScreen() {
     const placeholderId = 'ai-' + Date.now();
     setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', text: '', streaming: true }]);
 
+    const temp = await getTemperature();
     try {
       const run = completion({
         modelId: mid, history, stream: true,
         captureThinking: false,
-        generationParams: { predict: fastMode ? 256 : 2048, temp: 0.7, top_k: 40 },
+        generationParams: { predict: fastMode ? 256 : 2048, temp: fastMode ? 0.7 : temp, top_k: 40 },
       });
       currentRunRef.current = run;
       let streamed = '';
@@ -288,9 +285,7 @@ export default function ChatScreen() {
             setMdPanelFile(generatedFile);
             setTimeout(() => setMdPanelVisible(true), 300);
           } else {
-            setHtmlPanelSource(artifact.source);
-            setHtmlPanelFile(generatedFile);
-            setTimeout(() => setHtmlPanelVisible(true), 300);
+            // HTML: don't auto-open a panel — let user tap "Open in Browser" on the file card
           }
         }
       }
@@ -352,13 +347,20 @@ export default function ChatScreen() {
   };
 
   const shareArtifact = async (file: GeneratedFile) => {
+    if (file.artifactType === 'md') {
+      // Re-open the in-app MD preview panel
+      setMdPanelFile(file);
+      setMdPanelVisible(true);
+      return;
+    }
+    // HTML → share sheet so user can pick browser
     try {
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
         await Sharing.shareAsync(file.fileUri, {
-          mimeType: file.artifactType === 'html' ? 'text/html' : 'text/markdown',
-          dialogTitle: `Share ${file.artifactType.toUpperCase()} file`,
-          UTI: file.artifactType === 'html' ? 'public.html' : 'net.daringfireball.markdown',
+          mimeType: 'text/html',
+          dialogTitle: 'Open in Browser',
+          UTI: 'public.html',
         });
       } else {
         Alert.alert('File saved', `Saved as: ${file.name}`);
@@ -585,14 +587,6 @@ export default function ChatScreen() {
         onClose={() => setMdPanelVisible(false)}
         theme={theme}
       />
-      <HtmlPreviewPanel
-        visible={htmlPanelVisible}
-        source={htmlPanelSource}
-        fileName={htmlPanelFile?.name ?? 'page.html'}
-        fileUri={htmlPanelFile?.fileUri}
-        onClose={() => setHtmlPanelVisible(false)}
-        theme={theme}
-      />
     </View>
   );
 }
@@ -625,17 +619,25 @@ function MessageBubble({ msg, theme, onToggleThinking, onShareFile }: {
             ) : null}
           </View>
 
-          {/* Generated file card — Save & Share */}
+          {/* Generated file card */}
           {!msg.streaming && msg.generatedFile ? (
             <View style={[styles.fileCard, { backgroundColor: theme.cardAlt, borderColor: theme.accent + '55' }]}>
-              <Text style={styles.fileCardIcon}>{msg.generatedFile.artifactType === 'html' ? '🌐' : '📄'}</Text>
+              <View style={[styles.fileCardBadge, { backgroundColor: theme.accent + '22', borderColor: theme.accent + '55' }]}>
+                <Text style={[styles.fileCardBadgeText, { color: theme.accent }]}>
+                  {msg.generatedFile.artifactType === 'html' ? 'HTML' : 'MD'}
+                </Text>
+              </View>
               <View style={styles.fileCardBody}>
                 <Text style={[styles.fileCardName, { color: theme.text }]} numberOfLines={1}>{msg.generatedFile.name}</Text>
-                <Text style={[styles.fileCardMeta, { color: theme.textSecondary }]}>{msg.generatedFile.artifactType === 'html' ? 'HTML page' : 'Markdown file'} · saved to device</Text>
+                <Text style={[styles.fileCardMeta, { color: theme.textSecondary }]}>
+                  {msg.generatedFile.artifactType === 'html' ? 'HTML page' : 'Markdown doc'} · saved
+                </Text>
               </View>
               {onShareFile && (
                 <TouchableOpacity onPress={onShareFile} style={[styles.shareBtn, { backgroundColor: theme.accent }]} activeOpacity={0.8}>
-                  <Text style={[styles.shareBtnText, { color: '#000' }]}>Share ↗</Text>
+                  <Text style={[styles.shareBtnText, { color: '#000' }]}>
+                    {msg.generatedFile.artifactType === 'html' ? 'Open' : 'View'}
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -780,7 +782,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10,
     borderRadius: 12, borderWidth: 1, padding: 12, marginTop: 4,
   },
-  fileCardIcon: { fontSize: 22 },
+  fileCardBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
+  fileCardBadgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.4 },
   fileCardBody: { flex: 1, gap: 2 },
   fileCardName: { fontSize: 13, fontWeight: '700' },
   fileCardMeta: { fontSize: 11 },

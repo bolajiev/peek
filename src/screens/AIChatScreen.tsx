@@ -11,7 +11,7 @@ import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import {
-  syncModelsFromDisk, getSettings, getDefaultModelId,
+  syncModelsFromDisk, getSettings, getDefaultModelId, getTemperature,
   getConversations, saveConversation, getMessages,
   appendMessage, updateLastMessage, createConversationId,
 } from '../utils/storage';
@@ -132,7 +132,7 @@ export default function AIChatScreen() {
     await appendMessage(cm);
     if (msg.role === 'user') {
       const conv: Conversation = {
-        id: convId, moduleId: 'quickchat',
+        id: convId, moduleId: 'aichat',
         title: msg.text.slice(0, 60) || 'AI Chat',
         modelId: activeStorageModelId ?? '',
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
@@ -166,12 +166,13 @@ export default function AIChatScreen() {
 
       const mid = modelIdRef.current;
       if (!mid) throw new Error('No model loaded');
+      const temp = await getTemperature();
       const run = completion({
         modelId: mid,
         history: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
         stream: true,
         captureThinking: !fastMode,
-        generationParams: { predict: fastMode ? 256 : 600, temp: 0.7, top_k: 40 },
+        generationParams: { predict: fastMode ? 256 : 2048, temp: fastMode ? 0.7 : temp, top_k: 40 },
       });
       currentRunRef.current = run;
       let streamed = '';
@@ -302,18 +303,6 @@ export default function AIChatScreen() {
           <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
             Ask me anything — questions, explanations, ideas, code, analysis.{'\n'}All on-device, completely private.
           </Text>
-          <View style={styles.tipRow}>
-            {['Explain quantum entanglement simply', 'Write a Python bubble sort', 'What is Occam\'s razor?'].map(tip => (
-              <TouchableOpacity
-                key={tip}
-                style={[styles.tipChip, { borderColor: theme.border, backgroundColor: theme.card }]}
-                onPress={() => setInput(tip)}
-                activeOpacity={0.75}
-              >
-                <Text style={[styles.tipText, { color: theme.textSecondary }]}>{tip}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
       )}
 
