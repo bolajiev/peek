@@ -105,6 +105,27 @@ export function stripThink(raw: string): { text: string; thinking: string } {
   return { text, thinking: thinking.trim() };
 }
 
+// ── Utility: streaming-aware think split ─────────────────────
+// Handles mid-stream unclosed <think> blocks so raw tags never
+// appear in visible text and content after </think> is preserved.
+export function splitStream(raw: string): { answer: string; thinking: string; inThink: boolean } {
+  let thinking = '';
+  let answer = raw;
+  // Remove all complete <think>...</think> blocks first
+  answer = answer.replace(/<think>([\s\S]*?)<\/think>/gi, (_, inner) => {
+    thinking += inner.trim() + '\n';
+    return '';
+  });
+  // Check for an unclosed <think> block (we're still inside it)
+  const openIdx = answer.lastIndexOf('<think>');
+  if (openIdx !== -1) {
+    thinking += answer.slice(openIdx + 7);
+    answer = answer.slice(0, openIdx);
+    return { answer: answer.trim(), thinking: thinking.trim(), inThink: true };
+  }
+  return { answer: answer.trim(), thinking: thinking.trim(), inThink: false };
+}
+
 // ── Utility: detect fenced ```md or ```html block ──────────
 export function detectArtifact(text: string): { type: 'html' | 'md'; source: string } | null {
   const htmlMatch = text.match(/```html\s*([\s\S]*?)```/i);

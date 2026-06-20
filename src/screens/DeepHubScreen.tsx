@@ -78,7 +78,7 @@ export default function DeepHubScreen() {
             <TouchableOpacity
               key={item.id}
               style={[styles.sessionItem, { backgroundColor: theme.card, borderColor: theme.border }]}
-              onPress={() => navigation.navigate('DeepResearch', { modelId })}
+              onPress={() => navigation.navigate('DeepResearch', { modelId, resumeConvId: item.id })}
               activeOpacity={0.72}
             >
               <View style={[styles.sessionIcon, { backgroundColor: theme.cardAlt }]}>

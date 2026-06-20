@@ -21,6 +21,7 @@ import VoiceScreen from '../screens/VoiceScreen';
 import DeepScreen from '../screens/DeepScreen';
 import RelayScreen from '../screens/RelayScreen';
 import ResultScreen from '../screens/ResultScreen';
+import LensResultScreen from '../screens/LensResultScreen';
 import ModelsScreen from '../screens/ModelsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import DownloadScreen from '../screens/DownloadScreen';
@@ -167,6 +168,7 @@ export default function AppNavigator() {
           <Stack.Screen name="Relay" component={RelayScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="History" component={HistoryScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Result" component={ResultScreen} options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="LensResult" component={LensResultScreen} options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen
             name="Models"
             component={ModelsScreen}

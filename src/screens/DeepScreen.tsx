@@ -12,11 +12,11 @@ import { unzipSync, strFromU8 } from 'fflate';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext, newRagWorkspace, closeRagWorkspace } from '../utils/ragService';
-import { syncModelsFromDisk, getSettings, getDefaultModelId, setDefaultModelId, toPath, saveDeepSession, appendMessage, saveConversation, createConversationId } from '../utils/storage';
+import { syncModelsFromDisk, getSettings, getDefaultModelId, setDefaultModelId, toPath, saveDeepSession, appendMessage, saveConversation, createConversationId, getMessages } from '../utils/storage';
 import { ChatMessage, Conversation } from '../types';
 import { completion, cancel, loadModel, unloadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
-import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS, stripThink } from '../utils/models';
+import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS, stripThink, splitStream } from '../utils/models';
 import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
@@ -39,6 +39,7 @@ export default function DeepScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const preselectedModelId: string | undefined = route.params?.modelId;
+  const resumeConvId: string | undefined = route.params?.resumeConvId;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
   const insets = useSafeAreaInsets();
@@ -61,13 +62,22 @@ export default function DeepScreen() {
   const currentRunRef = useRef<any>(null);
   const sessionSavedRef = useRef(false);
   const isInferringRef = useRef(false);
-  const convIdRef = useRef<string>(createConversationId());
+  const convIdRef = useRef<string>(resumeConvId ?? createConversationId());
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     loadLlm();
+    // Rehydrate previous conversation if resuming from history
+    if (resumeConvId) {
+      sessionSavedRef.current = true; // don't re-save the session header
+      getMessages(resumeConvId).then(msgs => {
+        setMessages(msgs.map(m => ({ id: m.id, role: m.role as 'user' | 'assistant', text: m.content })));
+        setPhase('ready');
+        setSourceTitle('Previous session');
+      });
+    }
     const sub = Keyboard.addListener('keyboardDidShow', () => {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     });
@@ -245,15 +255,15 @@ export default function DeepScreen() {
       let full = '';
       const run = completion({
         modelId: llmModelId, history: msgs, stream: true,
-        captureThinking: true,
-        generationParams: { predict: 500, temp: 0.4, top_k: 30 },
+        captureThinking: false,
+        generationParams: { predict: 300, temp: 0.4, top_k: 30 },
       });
       currentRunRef.current = run;
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') {
           full += (ev as any).text;
-          const { text: visible } = stripThink(full);
-          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: visible } : m));
+          const { answer: visible } = splitStream(full);
+          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: visible || '▍' } : m));
           scrollRef.current?.scrollToEnd({ animated: false });
         }
       }

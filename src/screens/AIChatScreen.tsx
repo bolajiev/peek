@@ -15,7 +15,7 @@ import {
   getConversations, saveConversation, getMessages,
   appendMessage, updateLastMessage, createConversationId,
 } from '../utils/storage';
-import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS, stripThink } from '../utils/models';
+import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS, stripThink, splitStream } from '../utils/models';
 import { DownloadedModel, Conversation, ChatMessage } from '../types';
 import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
@@ -29,6 +29,7 @@ interface Message {
   role: 'user' | 'assistant';
   text: string;
   streaming?: boolean;
+  inThink?: boolean;
   thinking?: string;
   showThinking?: boolean;
 }
@@ -178,12 +179,14 @@ export default function AIChatScreen() {
       for await (const event of run.events) {
         if (event.type === 'contentDelta') {
           streamed += event.text;
-          const { text: visible } = stripThink(streamed);
-          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: visible } : m));
+          const { answer: visible, thinking: thinkLive, inThink } = splitStream(streamed);
+          setMessages(prev => prev.map(m => m.id === placeholderId
+            ? { ...m, text: visible, thinking: thinkingText || thinkLive, inThink }
+            : m));
           scrollRef.current?.scrollToEnd({ animated: false });
         } else if (event.type === 'thinkingDelta') {
           thinkingText += event.text;
-          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, thinking: thinkingText } : m));
+          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, thinking: thinkingText, inThink: true } : m));
         }
       }
       await run.final;
@@ -388,13 +391,13 @@ function MessageBubble({ msg, theme, onToggleThinking, showThinkToggle }: {
         <View style={styles.aiBubbleWrap}>
           <View style={[styles.aiBubble, { backgroundColor: theme.card }]}>
             {msg.streaming ? (
-              msg.text ? (
-                <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}▍</Text>
-              ) : msg.thinking ? (
+              msg.inThink ? (
                 <View style={styles.thinkingLive}>
                   <Text style={[styles.thinkingLiveLabel, { color: theme.accent }]}>Thinking…</Text>
-                  <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={6}>{msg.thinking}▍</Text>
+                  {msg.thinking ? <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={6}>{msg.thinking}▍</Text> : null}
                 </View>
+              ) : msg.text ? (
+                <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}▍</Text>
               ) : (
                 <Text style={[styles.bubbleText, { color: theme.textSecondary }]}>▍</Text>
               )
