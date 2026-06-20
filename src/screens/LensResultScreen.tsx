@@ -20,6 +20,7 @@ export default function LensResultScreen() {
   const route = useRoute<any>();
   const photoUri: string = route.params?.photoUri;
   const preselectedModelId: string | undefined = route.params?.preselectedModelId;
+  const userQuery: string = route.params?.userQuery || '';
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
 
@@ -69,7 +70,7 @@ export default function LensResultScreen() {
         modelId: mid,
         history: [
           { role: 'system', content: LENS_SYSTEM_PROMPT },
-          { role: 'user', content: 'What is this? Describe what you see.', attachments: [{ path: imagePath }] },
+          { role: 'user', content: userQuery || 'What is this? Describe what you see.', attachments: [{ path: imagePath }] },
         ],
         stream: true,
         generationParams: { predict: 300, temp: 0.3, top_k: 20 },
@@ -98,7 +99,7 @@ export default function LensResultScreen() {
         await saveLensScan({
           id: Date.now().toString(),
           imagePath: photoUri,
-          query: 'What is this?',
+          query: userQuery || 'What is this?',
           text,
           modelName: modelInfo.name,
           createdAt: new Date().toISOString(),

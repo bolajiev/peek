@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated, Alert,
+  Image, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Paths, File } from 'expo-file-system';
@@ -29,6 +30,8 @@ export default function ScanScreen() {
   const cameraRef = useRef<CameraView>(null);
   const [zoom, setZoom] = useState(0);
   const [modelReady, setModelReady] = useState(false);
+  const [pendingUri, setPendingUri] = useState<string | null>(null);
+  const [userQuery, setUserQuery] = useState('');
   const captureScale = useRef(new Animated.Value(1)).current;
   const isLoadingModelRef = useRef(false);
 
@@ -80,7 +83,15 @@ export default function ScanScreen() {
   const zoomLabel = `${(1 + zoom * 9).toFixed(zoom === 0 ? 0 : 1)}×`;
 
   const navigateToResult = (photoUri: string) => {
-    navigation.navigate('LensResult', { photoUri, preselectedModelId });
+    setPendingUri(photoUri);
+    setUserQuery('');
+  };
+
+  const analyzeNow = () => {
+    if (!pendingUri) return;
+    navigation.navigate('LensResult', { photoUri: pendingUri, preselectedModelId, userQuery: userQuery.trim() });
+    setPendingUri(null);
+    setUserQuery('');
   };
 
   // Fix 3: wrap entire capture body in try-catch
@@ -121,6 +132,45 @@ export default function ScanScreen() {
       if (launchMode === 'gallery') navigation.goBack();
     }
   };
+
+  // Photo preview + query input before analysis
+  if (pendingUri) {
+    return (
+      <KeyboardAvoidingView
+        style={[styles.container, { backgroundColor: theme.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={[styles.previewHeader, { borderBottomColor: theme.border }]}>
+          <TouchableOpacity onPress={() => { setPendingUri(null); setUserQuery(''); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Text style={[styles.previewBack, { color: theme.accent }]}>Retake</Text>
+          </TouchableOpacity>
+          <Text style={[styles.previewTitle, { color: theme.text }]}>Analyze</Text>
+          <View style={{ width: 52 }} />
+        </View>
+        <Image source={{ uri: pendingUri }} style={styles.previewImage} resizeMode="cover" />
+        <View style={[styles.previewInputWrap, { borderTopColor: theme.border }]}>
+          <Text style={[styles.previewLabel, { color: theme.textSecondary }]}>What would you like to know?</Text>
+          <TextInput
+            style={[styles.previewInput, { backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
+            placeholder="Leave blank for a general description..."
+            placeholderTextColor={theme.textSecondary}
+            value={userQuery}
+            onChangeText={setUserQuery}
+            multiline
+            maxLength={400}
+            autoFocus
+          />
+          <TouchableOpacity
+            style={[styles.analyzeBtn, { backgroundColor: theme.accent }]}
+            onPress={analyzeNow}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.analyzeBtnText, { color: theme.accentFg }]}>Analyze</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    );
+  }
 
   // Gallery mode: never render the camera view — DocumentPicker handles everything
   if (launchMode === 'gallery') {
@@ -233,4 +283,19 @@ const styles = StyleSheet.create({
   permText: { fontSize: 17, textAlign: 'center', lineHeight: 24 },
   permBtn: { paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14 },
   permBtnText: { fontSize: 16, fontWeight: '800' },
+  previewHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingTop: 56, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1,
+  },
+  previewBack: { fontSize: 15, fontWeight: '600', width: 52 },
+  previewTitle: { fontSize: 16, fontWeight: '700' },
+  previewImage: { flex: 1 },
+  previewInputWrap: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32, borderTopWidth: 1, gap: 10 },
+  previewLabel: { fontSize: 13, fontWeight: '600' },
+  previewInput: {
+    borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10,
+    fontSize: 15, minHeight: 60, maxHeight: 120, textAlignVertical: 'top',
+  },
+  analyzeBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  analyzeBtnText: { fontSize: 16, fontWeight: '800' },
 });

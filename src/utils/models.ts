@@ -1,10 +1,11 @@
 import {
   QWEN3_1_7B_INST_Q4,
-  MEDGEMMA_4B_IT_Q4_1,
   SMOLVLM2_500M_MULTIMODAL_Q8_0,
   MMPROJ_SMOLVLM2_500M_MULTIMODAL_Q8_0,
   GEMMA4_2B_MULTIMODAL_Q4_K_M,
 } from '@qvac/sdk';
+
+const MEDPSY_4B_SRC = 'registry://hf/qvac/MedPsy-4B-GGUF/resolve/main/medpsy-4b-q4_k_m-imat.gguf';
 import { ModelInfo } from '../types';
 
 export const MODEL_KEYS = {
@@ -32,13 +33,13 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   },
   {
     id: MODEL_KEYS.TEXT_HEALTH,
-    name: 'MedGemma 4B',
+    name: 'MedPsy 4B',
     modelType: 'text',
-    tagline: 'Health & medical specialist.',
-    description: 'MedGemma 4B is Google\'s medical-domain model. Knowledgeable, accurate, runs fully on-device.',
-    size: '2.4GB',
-    sizeBytes: 2_564_052_800,
-    modelSrc: MEDGEMMA_4B_IT_Q4_1.src,
+    tagline: 'Medical & mental health specialist.',
+    description: 'MedPsy 4B by QVAC. State-of-the-art medical and healthcare model built for edge devices. Knowledgeable on health, symptoms, and wellness — fully on-device.',
+    size: '2.7GB',
+    sizeBytes: 2_720_000_000,
+    modelSrc: MEDPSY_4B_SRC,
     supports: ['text', 'health'],
   },
   {
