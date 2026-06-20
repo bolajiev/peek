@@ -31,6 +31,9 @@ interface Message {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  thinking?: string;
+  inThink?: boolean;
+  showThinking?: boolean;
   sources?: string[];
   showSources?: boolean;
 }
@@ -73,7 +76,7 @@ export default function DeepScreen() {
     if (resumeConvId) {
       sessionSavedRef.current = true; // don't re-save the session header
       getMessages(resumeConvId).then(msgs => {
-        setMessages(msgs.map(m => ({ id: m.id, role: m.role as 'user' | 'assistant', text: m.content })));
+        setMessages(msgs.map(m => ({ id: m.id, role: m.role as 'user' | 'assistant', text: m.content, thinking: m.thinking })));
         setPhase('ready');
         setSourceTitle('Previous session');
       }).catch(() => {});
@@ -269,6 +272,7 @@ export default function DeepScreen() {
           scrollRef.current?.scrollToEnd({ animated: false });
         } else if ((ev as any).type === 'thinkingDelta') {
           thinkingFull += (ev as any).text;
+          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, thinking: thinkingFull, inThink: true } : m));
         }
       }
       currentRunRef.current = null;
@@ -276,7 +280,7 @@ export default function DeepScreen() {
       const { text: cleanFull, thinking: thinkFallback } = stripThink(full);
       const finalText = cleanFull.trim() || 'No response.';
       const finalThinking = thinkingFull || thinkFallback || undefined;
-      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: finalText } : m));
+      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: finalText, thinking: finalThinking, inThink: false } : m));
       const aiCm: ChatMessage = { id: placeholderId, conversationId: convIdRef.current, role: 'assistant', content: finalText, thinking: finalThinking, createdAt: new Date().toISOString() };
       await appendMessage(aiCm);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -299,6 +303,10 @@ export default function DeepScreen() {
 
   const toggleSources = (id: string) => {
     setMessages(prev => prev.map(m => m.id === id ? { ...m, showSources: !m.showSources } : m));
+  };
+
+  const toggleThinking = (id: string) => {
+    setMessages(prev => prev.map(m => m.id === id ? { ...m, showThinking: !m.showThinking } : m));
   };
 
   const reset = () => { setPhase('idle'); setMessages([]); setSourceTitle(''); };
@@ -386,6 +394,12 @@ export default function DeepScreen() {
           <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {messages.map((msg) => (
               <View key={msg.id} style={[styles.turn, msg.role === 'user' ? styles.turnRight : styles.turnLeft]}>
+                {msg.role === 'assistant' && msg.inThink && (
+                  <View style={[styles.thinkingLive, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
+                    <Text style={[styles.thinkingLiveLabel, { color: theme.accent }]}>Reasoning...</Text>
+                    {msg.thinking ? <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={5}>{msg.thinking}▍</Text> : null}
+                  </View>
+                )}
                 <View style={[
                   styles.bubble,
                   msg.role === 'user'
@@ -393,11 +407,29 @@ export default function DeepScreen() {
                     : { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1, borderBottomLeftRadius: 4 },
                 ]}>
                   {msg.role === 'assistant' ? (
-                    <MarkdownText color={theme.text} fontSize={15} lineHeight={22}>{msg.text}</MarkdownText>
+                    <MarkdownText color={theme.text} fontSize={15} lineHeight={23}>{msg.text || (msg.inThink ? '' : '▍')}</MarkdownText>
                   ) : (
                     <Text selectable style={[styles.bubbleText, { color: theme.accentFg }]}>{msg.text}</Text>
                   )}
                 </View>
+                {msg.role === 'assistant' && !msg.inThink && msg.thinking ? (
+                  <>
+                    <TouchableOpacity
+                      style={[styles.thinkingToggle, { borderColor: theme.border }]}
+                      onPress={() => toggleThinking(msg.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.thinkingToggleText, { color: theme.textSecondary }]}>
+                        {msg.showThinking ? '▼ Hide reasoning' : '▶ View reasoning'}
+                      </Text>
+                    </TouchableOpacity>
+                    {msg.showThinking && (
+                      <View style={[styles.thinkingBox, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
+                        <Text selectable style={[styles.thinkingText, { color: theme.textSecondary }]}>{msg.thinking}</Text>
+                      </View>
+                    )}
+                  </>
+                ) : null}
                 {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 ? (
                   <>
                     <TouchableOpacity
@@ -525,6 +557,13 @@ const styles = StyleSheet.create({
   bubbleActions: { flexDirection: 'row', paddingHorizontal: 4 },
   bubble: { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12 },
   bubbleText: { fontSize: 15, lineHeight: 22 },
+  thinkingLive: { borderRadius: 14, borderWidth: 1, padding: 12, gap: 4 },
+  thinkingLiveLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  thinkingLiveText: { fontSize: 12, lineHeight: 18, fontStyle: 'italic' },
+  thinkingToggle: { alignSelf: 'flex-start', borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5 },
+  thinkingToggleText: { fontSize: 11, fontWeight: '600' },
+  thinkingBox: { borderRadius: 12, borderWidth: 1, padding: 12 },
+  thinkingText: { fontSize: 12, lineHeight: 18, fontStyle: 'italic' },
   sourcesToggle: { alignSelf: 'flex-start', borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5 },
   sourcesToggleText: { fontSize: 11, fontWeight: '600' },
   sourcesBox: { borderRadius: 12, borderWidth: 1, padding: 12, gap: 8 },
