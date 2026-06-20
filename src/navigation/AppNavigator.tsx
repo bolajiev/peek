@@ -19,7 +19,6 @@ import LensHubScreen from '../screens/LensHubScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import VoiceScreen from '../screens/VoiceScreen';
 import DeepScreen from '../screens/DeepScreen';
-import RelayScreen from '../screens/RelayScreen';
 import ResultScreen from '../screens/ResultScreen';
 import LensResultScreen from '../screens/LensResultScreen';
 import ModelsScreen from '../screens/ModelsScreen';
@@ -166,7 +165,6 @@ export default function AppNavigator() {
           <Stack.Screen name="ScribeChat" component={ChatScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Deep" component={DeepHubScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="DeepResearch" component={DeepScreen} options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="Relay" component={RelayScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="History" component={HistoryScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Result" component={ResultScreen} options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="LensResult" component={LensResultScreen} options={{ animation: 'slide_from_bottom' }} />

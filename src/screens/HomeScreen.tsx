@@ -1,13 +1,13 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated,
-  Dimensions, Alert,
+  Dimensions,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme, useSidebar } from '../navigation/AppNavigator';
 import {
-  IconLens, IconVoice, IconScribe, IconDeep, IconRelay, IconChat, IconMenu,
+  IconLens, IconVoice, IconScribe, IconDeep, IconChat, IconMenu,
 } from '../components/Icons';
 import { syncModelsFromDisk } from '../utils/storage';
 import { MODEL_KEYS } from '../utils/models';
@@ -18,7 +18,7 @@ const H_PAD = 12;
 const CARD_GAP = 10;
 const CARD_W = (SW - H_PAD * 2 - CARD_GAP) / 2;
 
-type ModuleKey = 'Lens' | 'Voice' | 'Scribe' | 'Deep' | 'Chat' | 'Relay';
+type ModuleKey = 'Lens' | 'Voice' | 'Scribe' | 'Deep' | 'Chat';
 
 interface Module {
   id: ModuleKey;
@@ -66,12 +66,6 @@ const MODULES: Module[] = [
     icon: (c) => <IconChat size={20} color={c} />,
     modelKey: TEXT_MODEL_KEY,
   },
-  {
-    id: 'Relay', screen: 'Relay', label: 'P2P · Coming Soon', title: 'Peek Relay',
-    desc: 'Offload heavy tasks to a nearby device',
-    icon: (c) => <IconRelay size={20} color={c} />,
-    fullWidth: true,
-  },
 ];
 
 type ModelStatus = 'ready' | 'needs-download' | 'unknown';
@@ -111,10 +105,6 @@ export default function HomeScreen() {
   };
 
   const enterModule = async (mod: Module) => {
-    if (mod.id === 'Relay') {
-      Alert.alert('Coming Soon', 'Peek Relay is under development. Stay tuned.');
-      return;
-    }
     const status = getStatus(mod);
     if (status === 'needs-download') {
       const downloadId = mod.modelKey === TEXT_MODEL_KEY
