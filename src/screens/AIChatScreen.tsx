@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import * as Haptics from 'expo-haptics';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
@@ -60,6 +62,7 @@ export default function AIChatScreen() {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [downloadedModels, setDownloadedModels] = useState<DownloadedModel[]>([]);
   const [activeStorageModelId, setActiveStorageModelId] = useState<string | null>(null);
+  const [attachedDoc, setAttachedDoc] = useState<{ name: string; content: string } | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
   const currentRunRef = useRef<any>(null);
@@ -144,10 +147,27 @@ export default function AIChatScreen() {
     }
   };
 
+  // ── doc attach ─────────────────────────────────────────
+  const handleDocAttach = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: ['text/*', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'] });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      const content = await FileSystem.readAsStringAsync(asset.uri);
+      setAttachedDoc({ name: asset.name ?? 'document', content });
+    } catch {
+      Alert.alert('Could not read file', 'The file could not be opened.');
+    }
+  };
+
   // ── send ────────────────────────────────────────────────
   const handleSend = async () => {
-    const text = input.trim();
-    if (!text || isInferringRef.current || modelLoading || noModel) return;
+    const trimmed = input.trim();
+    if (!trimmed || isInferringRef.current || modelLoading || noModel) return;
+    const messageText = attachedDoc
+      ? `${trimmed}\n\n[Document: ${attachedDoc.name}]\n${attachedDoc.content}`
+      : trimmed;
+    setAttachedDoc(null);
     isInferringRef.current = true;
     setIsTyping(true);
     setGenElapsed(0);
@@ -155,9 +175,9 @@ export default function AIChatScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const userId = `u-${Date.now()}`;
     const placeholderId = `a-${Date.now()}`;
-    const userMsg: Message = { id: userId, role: 'user', text };
+    const userMsg: Message = { id: userId, role: 'user', text: messageText };
     setMessages(prev => [...prev, userMsg, { id: placeholderId, role: 'assistant', text: '', streaming: true }]);
-    persistMessage(userMsg);
+    await persistMessage(userMsg);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
     genTimerRef.current = setInterval(() => setGenElapsed(s => s + 1), 1000);
 
@@ -165,7 +185,7 @@ export default function AIChatScreen() {
 
     try {
       const history = messages.slice(-16).map(m => ({ role: m.role, content: m.text }));
-      history.push({ role: 'user', content: text });
+      history.push({ role: 'user', content: messageText });
 
       const mid = modelIdRef.current;
       if (!mid) throw new Error('No model loaded');
@@ -175,7 +195,14 @@ export default function AIChatScreen() {
         history: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
         stream: true,
         captureThinking: false,
-        generationParams: { predict: fastMode ? 256 : gp.maxTokens, temp: fastMode ? 0.7 : gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty },
+        generationParams: {
+          predict: fastMode ? 256 : gp.maxTokens,
+          temp: fastMode ? 0.7 : gp.temp,
+          top_k: fastMode ? 10 : gp.top_k,
+          top_p: gp.top_p,
+          repeat_penalty: gp.repeat_penalty,
+          reasoning_budget: 0 as 0,
+        },
       });
       currentRunRef.current = run;
       let streamed = '';
@@ -267,17 +294,9 @@ export default function AIChatScreen() {
         <TouchableOpacity style={styles.modelPillBtn} onPress={() => setPickerVisible(true)} activeOpacity={0.7}>
           <View style={[styles.modelDot, { backgroundColor: !modelLoading && !noModel ? theme.accent : theme.border }]} />
           <Text style={[styles.modelPillText, { color: theme.text }]} numberOfLines={1}>
-            {modelLoading ? `Loading… ${Math.round(loadProgress * 100)}%` : noModel ? 'No model' : modelName}
+            {modelLoading ? `Loading... ${Math.round(loadProgress * 100)}%` : noModel ? 'No model' : modelName}
           </Text>
           <Text style={[styles.modelPillChevron, { color: theme.textSecondary }]}>▾</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() => setFastMode(f => !f)}
-          style={[styles.modeBtn, { backgroundColor: fastMode ? theme.accent + '22' : theme.cardAlt }]}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Text style={[styles.modeBtnText, { color: fastMode ? theme.accent : theme.textSecondary }]}>{fastMode ? 'Fast' : 'Long'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -331,16 +350,36 @@ export default function AIChatScreen() {
 
       {/* ── Input bar ── */}
       <Animated.View style={{ paddingBottom: inputPadBot }}>
+        {attachedDoc && (
+          <View style={[styles.docChip, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.docChipText, { color: theme.text }]} numberOfLines={1}>{attachedDoc.name}</Text>
+            <TouchableOpacity onPress={() => setAttachedDoc(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={{ color: theme.textSecondary, fontSize: 14 }}>x</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={[styles.inputBar, { borderTopColor: theme.border, backgroundColor: theme.background }]}>
           {isTyping ? (
             <TouchableOpacity style={[styles.stopBtn, { borderColor: theme.border }]} onPress={handleStop} activeOpacity={0.7}>
-              <Text style={[styles.stopBtnText, { color: theme.text }]}>■  Stop</Text>
+              <Text style={[styles.stopBtnText, { color: theme.text }]}>Stop</Text>
             </TouchableOpacity>
           ) : (
             <>
+              <TouchableOpacity
+                onPress={() => setFastMode(f => !f)}
+                style={[styles.modeToggle, { backgroundColor: fastMode ? theme.accent + '22' : theme.card, borderColor: fastMode ? theme.accent : theme.border }]}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={[styles.modeToggleText, { color: fastMode ? theme.accent : theme.textSecondary }]}>
+                  {fastMode ? 'Fast' : 'Long'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.attachBtn} onPress={handleDocAttach} activeOpacity={0.7}>
+                <Text style={[styles.attachBtnText, { color: theme.textSecondary }]}>+</Text>
+              </TouchableOpacity>
               <TextInput
                 style={[styles.input, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
-                placeholder={noModel ? 'Download a model first…' : 'Ask anything…'}
+                placeholder={noModel ? 'Download a model first...' : 'Ask anything...'}
                 placeholderTextColor={theme.textSecondary}
                 value={input}
                 onChangeText={setInput}
@@ -384,13 +423,13 @@ function MessageBubble({ msg, theme, onToggleThinking, showThinkToggle }: {
             {msg.streaming ? (
               msg.inThink ? (
                 <View style={styles.thinkingLive}>
-                  <Text style={[styles.thinkingLiveLabel, { color: theme.accent }]}>Thinking…</Text>
-                  {msg.thinking ? <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={6}>{msg.thinking}▍</Text> : null}
+                  <Text style={[styles.thinkingLiveLabel, { color: theme.accent }]}>Thinking...</Text>
+                  {msg.thinking ? <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={6}>{msg.thinking}|</Text> : null}
                 </View>
               ) : msg.text ? (
-                <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}▍</Text>
+                <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}|</Text>
               ) : (
-                <Text style={[styles.bubbleText, { color: theme.textSecondary }]}>▍</Text>
+                <Text style={[styles.bubbleText, { color: theme.textSecondary }]}>|</Text>
               )
             ) : msg.text ? (
               <MarkdownText color={theme.text} fontSize={15} lineHeight={22}>
@@ -404,7 +443,7 @@ function MessageBubble({ msg, theme, onToggleThinking, showThinkToggle }: {
             <>
               <TouchableOpacity style={[styles.thinkingToggle, { borderColor: theme.border }]} onPress={onToggleThinking} activeOpacity={0.7}>
                 <Text style={[styles.thinkingToggleText, { color: theme.textSecondary }]}>
-                  {msg.showThinking ? '▼ Hide thoughts' : '▶ View thoughts'}
+                  {msg.showThinking ? 'Hide thoughts' : 'View thoughts'}
                 </Text>
               </TouchableOpacity>
               {msg.showThinking && (
@@ -434,7 +473,7 @@ function TypingIndicator({ theme }: { theme: any }) {
   return (
     <View style={styles.bubbleRow}>
       <View style={[styles.aiBubble, { backgroundColor: theme.card }]}>
-        <Text style={[styles.bubbleText, { color: theme.textSecondary }]}>▍</Text>
+        <Text style={[styles.bubbleText, { color: theme.textSecondary }]}>|</Text>
       </View>
     </View>
   );
@@ -450,8 +489,6 @@ const styles = StyleSheet.create({
   modelDot: { width: 7, height: 7, borderRadius: 3.5 },
   modelPillText: { fontSize: 13, fontWeight: '700', flexShrink: 1 },
   modelPillChevron: { fontSize: 10 },
-  modeBtn: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, height: 34, justifyContent: 'center', alignItems: 'center' },
-  modeBtnText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.2 },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 28, paddingTop: 60 },
   emptyTitle: { fontSize: 28, fontWeight: '800', marginBottom: 8, letterSpacing: -0.4 },
   emptySub: { fontSize: 14, textAlign: 'center', lineHeight: 21, marginBottom: 24 },
@@ -481,4 +518,10 @@ const styles = StyleSheet.create({
   stopBtn: { flex: 1, borderRadius: 20, borderWidth: 1, paddingVertical: 12, alignItems: 'center' },
   stopBtnText: { fontSize: 14, fontWeight: '700', letterSpacing: 0.4 },
   genTimer: { fontSize: 12, alignSelf: 'flex-end', paddingBottom: 12 },
+  modeToggle: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, marginRight: 4 },
+  modeToggleText: { fontSize: 12, fontWeight: '600' },
+  attachBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, marginRight: 4 },
+  attachBtnText: { fontSize: 18, fontWeight: '400' },
+  docChip: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, marginHorizontal: 12, marginBottom: 6, gap: 8 },
+  docChipText: { fontSize: 12, flex: 1 },
 });

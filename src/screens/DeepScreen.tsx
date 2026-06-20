@@ -225,16 +225,16 @@ export default function DeepScreen() {
     if (!sessionSavedRef.current) {
       sessionSavedRef.current = true;
       const sesId = Date.now().toString();
-      saveDeepSession({ id: sesId, docName: sourceTitle, firstQuestion: q, createdAt: new Date().toISOString() });
+      await saveDeepSession({ id: sesId, docName: sourceTitle, firstQuestion: q, createdAt: new Date().toISOString() });
       const conv: Conversation = {
         id: convIdRef.current, moduleId: 'deep',
         title: q.slice(0, 60),
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       };
-      saveConversation(conv);
+      await saveConversation(conv);
     }
     const userCm: ChatMessage = { id: userMsg.id, conversationId: convIdRef.current, role: 'user', content: q, createdAt: new Date().toISOString() };
-    appendMessage(userCm);
+    await appendMessage(userCm);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
     const placeholderId = 'ai-' + Date.now();
@@ -258,7 +258,7 @@ export default function DeepScreen() {
       const run = completion({
         modelId: llmModelId, history: msgs, stream: true,
         captureThinking: true,
-        generationParams: { predict: Math.min(gp.maxTokens, 1024), temp: gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty },
+        generationParams: { predict: Math.min(gp.maxTokens, 1024), temp: gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty, reasoning_budget: -1 as -1 },
       });
       currentRunRef.current = run;
       for await (const ev of run.events) {

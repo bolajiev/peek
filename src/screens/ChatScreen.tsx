@@ -8,11 +8,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { File, Directory, Paths } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system';
 import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
-import * as IntentLauncher from 'expo-intent-launcher';
-import * as FileSystemLegacy from 'expo-file-system/legacy';
 import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
@@ -28,6 +27,7 @@ import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
 import ModelGalleryPicker from '../components/ModelGalleryPicker';
 import MdPreviewPanel from '../components/MdPreviewPanel';
+import HtmlPreviewPanel from '../components/HtmlPreviewPanel';
 
 interface GeneratedFile { name: string; fileUri: string; artifactType: 'md' | 'html'; }
 
@@ -81,6 +81,9 @@ export default function ChatScreen() {
   const [mdPanelVisible, setMdPanelVisible] = useState(false);
   const [mdPanelSource, setMdPanelSource] = useState('');
   const [mdPanelFile, setMdPanelFile] = useState<GeneratedFile | undefined>();
+  const [htmlPanelVisible, setHtmlPanelVisible] = useState(false);
+  const [htmlPanelHtml, setHtmlPanelHtml] = useState('');
+  const [htmlPanelFile, setHtmlPanelFile] = useState<GeneratedFile | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
   const currentRunRef = useRef<any>(null);
@@ -216,7 +219,7 @@ export default function ChatScreen() {
     const userMsg: Message = { id: Date.now().toString(), role: 'user', text: fullText, imagePath: imgPath ?? undefined };
     const allMsgs = [...messages, userMsg];
     setMessages(allMsgs);
-    persistMessage(userMsg);
+    await persistMessage(userMsg);
     setIsTyping(true);
     isInferringRef.current = true;
     setGenElapsed(0);
@@ -248,7 +251,7 @@ export default function ChatScreen() {
       const run = completion({
         modelId: mid, history, stream: true,
         captureThinking: false,
-        generationParams: { predict: fastMode ? 256 : gp.maxTokens, temp: fastMode ? 0.7 : gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty },
+        generationParams: { predict: fastMode ? 256 : gp.maxTokens, temp: fastMode ? 0.7 : gp.temp, top_k: fastMode ? 10 : gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty, reasoning_budget: 0 as 0 },
       });
       currentRunRef.current = run;
       let streamed = '';
@@ -286,7 +289,7 @@ export default function ChatScreen() {
             setMdPanelFile(generatedFile);
             setTimeout(() => setMdPanelVisible(true), 300);
           } else {
-            // HTML: don't auto-open a panel — let user tap "Open in Browser" on the file card
+            // HTML: don't auto-open a panel — let user tap "Open" on the file card
           }
         }
       }
@@ -352,20 +355,18 @@ export default function ChatScreen() {
       setMdPanelVisible(true);
       return;
     }
-    // HTML → open directly in browser via content URI intent
+    // HTML → open in in-app WebView panel
     try {
-      const contentUri = await FileSystemLegacy.getContentUriAsync(file.fileUri);
-      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-        data: contentUri,
-        type: 'text/html',
-        flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-      });
+      const html = await FileSystem.readAsStringAsync(file.fileUri);
+      setHtmlPanelHtml(html);
+      setHtmlPanelFile(file);
+      setHtmlPanelVisible(true);
     } catch {
-      // Fallback to share sheet if intent fails
+      // Fallback to share sheet if file read fails
       try {
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
-          await Sharing.shareAsync(file.fileUri, { mimeType: 'text/html', dialogTitle: 'Open in Browser', UTI: 'public.html' });
+          await Sharing.shareAsync(file.fileUri, { mimeType: 'text/html', dialogTitle: 'Share HTML', UTI: 'public.html' });
         }
       } catch {}
     }
@@ -454,15 +455,6 @@ export default function ChatScreen() {
           </Text>
         </TouchableOpacity>
         <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={[styles.modeToggle, { backgroundColor: fastMode ? theme.accent + '22' : theme.card, borderColor: fastMode ? theme.accent : theme.border }]}
-            onPress={() => setFastMode(f => !f)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={[styles.modeToggleText, { color: fastMode ? theme.accent : theme.textSecondary }]}>
-              {fastMode ? '⚡ Fast' : '🧠 Deep'}
-            </Text>
-          </TouchableOpacity>
           {messages.length > 0 && (
             <TouchableOpacity onPress={handleNewConversation} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={[styles.clearText, { color: theme.textSecondary }]}>New</Text>
@@ -534,6 +526,15 @@ export default function ChatScreen() {
               <TouchableOpacity style={styles.attachBtn} onPress={handleDocAttach} activeOpacity={0.7}>
                 <Text style={[styles.docBtnText, { color: theme.textSecondary }]}>doc</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeToggle, { backgroundColor: fastMode ? theme.accent + '22' : theme.card, borderColor: fastMode ? theme.accent : theme.border }]}
+                onPress={() => setFastMode(f => !f)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={[styles.modeToggleText, { color: fastMode ? theme.accent : theme.textSecondary }]}>
+                  {fastMode ? 'Fast' : 'Long'}
+                </Text>
+              </TouchableOpacity>
               <TextInput
                 style={[styles.textInput, { color: theme.text }]}
                 placeholder={modelLoading ? 'Loading model...' : 'Ask anything...'}
@@ -588,6 +589,15 @@ export default function ChatScreen() {
         fileName={mdPanelFile?.name ?? 'document.md'}
         fileUri={mdPanelFile?.fileUri}
         onClose={() => setMdPanelVisible(false)}
+        theme={theme}
+      />
+
+      <HtmlPreviewPanel
+        visible={htmlPanelVisible}
+        source={htmlPanelHtml}
+        fileName={htmlPanelFile?.name ?? ''}
+        fileUri={htmlPanelFile?.fileUri}
+        onClose={() => setHtmlPanelVisible(false)}
         theme={theme}
       />
     </View>
@@ -715,7 +725,7 @@ function NoModelState({ theme, error, onGoModels, onRetry }: any) {
     <View style={styles.emptyState}>
       <Text style={[styles.emptyTitle, { color: theme.text }]}>{error ? 'Load Failed' : 'No text model yet'}</Text>
       <Text selectable style={[styles.emptySub, { color: error ? theme.error : theme.textSecondary }]}>
-        {error ?? 'Download a text model (Qwen 2.5 or MedPsy) to start chatting.'}
+        {error ?? 'Download a text model (Qwen3 1.7B or MedGemma 4B) to start chatting.'}
       </Text>
       {error && (
         <TouchableOpacity style={[styles.goModelBtn, { backgroundColor: theme.accent }]} onPress={onRetry}>

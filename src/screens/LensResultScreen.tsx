@@ -8,7 +8,7 @@ import * as Clipboard from 'expo-clipboard';
 import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { getSettings, toPath, addHistoryItem, updateScanStreak } from '../utils/storage';
+import { getSettings, toPath, saveLensScan, updateScanStreak } from '../utils/storage';
 import { llmManager } from '../utils/modelManager';
 import { splitStream } from '../utils/models';
 import { findModel, LENS_SYSTEM_PROMPT } from './ScanScreen';
@@ -92,16 +92,16 @@ export default function LensResultScreen() {
       setPhase('done');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // Save to history
+      // Save to history — keep these independent so one failure doesn't block the other
+      try { await updateScanStreak(); } catch {}
       try {
-        await updateScanStreak();
-        await addHistoryItem({
+        await saveLensScan({
           id: Date.now().toString(),
-          timestamp: new Date().toISOString(),
-          query: 'What is this?',
-          result: { type: 'scan', text, query: 'What is this?' },
           imagePath: photoUri,
+          query: 'What is this?',
+          text,
           modelName: modelInfo.name,
+          createdAt: new Date().toISOString(),
         });
       } catch {}
     } catch (err) {
