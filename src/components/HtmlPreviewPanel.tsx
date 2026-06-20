@@ -1,14 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Modal, Animated,
-  Dimensions, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, Modal, Animated, Dimensions,
 } from 'react-native';
-import Markdown from 'react-native-markdown-display';
+import { WebView } from 'react-native-webview';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 
 const { height: SH } = Dimensions.get('window');
-const PANEL_H = SH * 0.75;
+const PANEL_H = SH * 0.82;
 
 interface Props {
   visible: boolean;
@@ -19,7 +18,7 @@ interface Props {
   theme: any;
 }
 
-export default function MdPreviewPanel({ visible, source, fileName, fileUri, onClose, theme }: Props) {
+export default function HtmlPreviewPanel({ visible, source, fileName, fileUri, onClose, theme }: Props) {
   const slideAnim = useRef(new Animated.Value(PANEL_H)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
   const [copied, setCopied] = React.useState(false);
@@ -43,9 +42,9 @@ export default function MdPreviewPanel({ visible, source, fileName, fileUri, onC
     const canShare = await Sharing.isAvailableAsync();
     if (canShare) {
       await Sharing.shareAsync(fileUri, {
-        mimeType: 'text/markdown',
-        dialogTitle: 'Share Markdown file',
-        UTI: 'net.daringfireball.markdown',
+        mimeType: 'text/html',
+        dialogTitle: 'Share HTML file',
+        UTI: 'public.html',
       });
     }
   };
@@ -56,31 +55,9 @@ export default function MdPreviewPanel({ visible, source, fileName, fileUri, onC
     setTimeout(() => setCopied(false), 1800);
   };
 
-  const mdStyles = {
-    body: { color: theme.text, fontSize: 15, lineHeight: 22, padding: 0 } as any,
-    heading1: { color: theme.text, fontWeight: '800', fontSize: 22, marginBottom: 8, marginTop: 4 } as any,
-    heading2: { color: theme.text, fontWeight: '700', fontSize: 18, marginBottom: 6, marginTop: 12 } as any,
-    heading3: { color: theme.text, fontWeight: '600', fontSize: 15, marginBottom: 4, marginTop: 10 } as any,
-    paragraph: { color: theme.text, marginBottom: 6 } as any,
-    code_block: { backgroundColor: theme.cardAlt, borderRadius: 8, padding: 12, fontFamily: 'monospace', fontSize: 12, color: theme.text } as any,
-    code_inline: { backgroundColor: theme.cardAlt, borderRadius: 4, fontFamily: 'monospace', fontSize: 12, color: theme.text } as any,
-    fence: { backgroundColor: theme.cardAlt, borderRadius: 8, padding: 12 } as any,
-    blockquote: { backgroundColor: theme.cardAlt, borderLeftColor: theme.accent, borderLeftWidth: 3, paddingLeft: 12, marginLeft: 0 } as any,
-    bullet_list_icon: { color: theme.accent } as any,
-    strong: { fontWeight: '700', color: theme.text } as any,
-    em: { fontStyle: 'italic', color: theme.text } as any,
-    link: { color: theme.accent } as any,
-    table: { borderColor: theme.border, borderWidth: 1, borderRadius: 6 } as any,
-    th: { backgroundColor: theme.cardAlt, fontWeight: '700', color: theme.text } as any,
-    td: { color: theme.text } as any,
-    tr: { borderBottomColor: theme.border } as any,
-    hr: { backgroundColor: theme.border } as any,
-  };
-
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={styles.root}>
-        {/* Backdrop */}
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: backdropAnim }]}>
           <TouchableOpacity
             style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.6)' }]}
@@ -88,38 +65,41 @@ export default function MdPreviewPanel({ visible, source, fileName, fileUri, onC
           />
         </Animated.View>
 
-        {/* Panel */}
         <Animated.View style={[styles.panel, { backgroundColor: theme.background, transform: [{ translateY: slideAnim }] }]}>
-          {/* Header */}
           <View style={[styles.panelHeader, { borderBottomColor: theme.border }]}>
             <View style={[styles.handleBar, { backgroundColor: theme.border }]} />
             <View style={styles.headerRow}>
               <View style={styles.fileInfo}>
                 <View style={[styles.fileBadge, { backgroundColor: theme.accent + '22', borderColor: theme.accent + '55' }]}>
-                  <Text style={[styles.fileBadgeText, { color: theme.accent }]}>MD</Text>
+                  <Text style={[styles.fileBadgeText, { color: theme.accent }]}>HTML</Text>
                 </View>
                 <Text style={[styles.fileName, { color: theme.text }]} numberOfLines={1}>{fileName}</Text>
               </View>
               <View style={styles.headerActions}>
                 {fileUri && (
                   <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme.accent }]} onPress={handleShare} activeOpacity={0.8}>
-                    <Text style={[styles.actionBtnText, { color: theme.accentFg }]}>Share ↗</Text>
+                    <Text style={[styles.actionBtnText, { color: theme.accentFg }]}>Share</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme.cardAlt }]} onPress={handleCopy} activeOpacity={0.8}>
-                  <Text style={[styles.actionBtnText, { color: theme.text }]}>{copied ? 'Copied ✓' : 'Copy'}</Text>
+                  <Text style={[styles.actionBtnText, { color: theme.text }]}>{copied ? 'Copied' : 'Copy'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Text style={[styles.closeBtn, { color: theme.textSecondary }]}>✕</Text>
+                  <Text style={[styles.closeBtn, { color: theme.textSecondary }]}>x</Text>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
 
-          {/* Content */}
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-            <Markdown style={mdStyles}>{source}</Markdown>
-          </ScrollView>
+          <WebView
+            source={{ html: source }}
+            style={styles.webview}
+            originWhitelist={['*']}
+            javaScriptEnabled
+            domStorageEnabled={false}
+            allowFileAccess={false}
+            mixedContentMode="never"
+          />
         </Animated.View>
       </View>
     </Modal>
@@ -143,6 +123,5 @@ const styles = StyleSheet.create({
   actionBtn: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   actionBtnText: { fontSize: 12, fontWeight: '700' },
   closeBtn: { fontSize: 16, fontWeight: '600', paddingLeft: 4 },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 18, paddingBottom: 40 },
+  webview: { flex: 1 },
 });

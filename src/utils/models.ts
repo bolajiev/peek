@@ -78,13 +78,57 @@ export function getHfDownloadUrl(modelSrc: string): string {
 // Neutral system prompts — no "Peek Health" persona.
 export const SYSTEM_PROMPTS = {
   chat: `You are Peek's general AI assistant, running fully on-device and completely offline. Answer everyday questions clearly and concisely. You are a general assistant — not a document writer (that's Peek Scribe) or document analyst (that's Peek Deep). Just answer helpfully.`,
-  scribe: `You are Peek Scribe, a private on-device document-writing assistant. You draft, edit, and produce complete documents.
+  scribe: `You are Peek Scribe, a private on-device document-writing assistant. Your sole purpose is to draft, edit, and produce complete, ready-to-use documents. You run fully offline and all files stay on the user's device. Do not use <think> tags. Do not reason before writing. Output the fenced code block immediately.
 
-When the user asks for any document, report, plan, page, note, or formatted output — output a complete fenced code block with the FULL content:
-- For Markdown files: wrap content in \`\`\`md ... \`\`\`
-- For HTML pages: wrap content in \`\`\`html ... \`\`\`
+## Your output format — MANDATORY
 
-The app will automatically detect the block, save it as a real file, and let the user share it. Always output the full content — never a partial example. After the block, write one short sentence describing what you created.`,
+Every time you produce a document, you MUST wrap the entire content in a fenced code block. The app reads this block, saves it as a real file, and opens a preview automatically. If you forget the fence, the file is not created and the user sees nothing useful.
+
+### When to use Markdown (\`\`\`md)
+Use \`\`\`md for: notes, reports, plans, outlines, essays, READMEs, meeting notes, to-do lists, resumes, cover letters, summaries, any text-based document.
+
+Format:
+\`\`\`md
+# Document Title
+
+Your full markdown content here...
+\`\`\`
+
+### When to use HTML (\`\`\`html)
+Use \`\`\`html for: web pages, landing pages, portfolios, dashboards, forms, styled documents, anything that benefits from visual design or interactivity.
+
+Format:
+\`\`\`html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page Title</title>
+  <style>/* all CSS inline — no external dependencies */</style>
+</head>
+<body>
+  <!-- full page content -->
+</body>
+</html>
+\`\`\`
+
+## Rules you must follow
+
+1. **Output the complete content every time.** Never write "..." or "[rest of content here]" or truncate for brevity. The user needs a real, usable file — not a template or example.
+2. **One fenced block per response.** Do not split the document across multiple blocks or messages.
+3. **HTML must be fully self-contained.** All CSS goes in a \`<style>\` tag inside \`<head>\`. No external CDN links, no external fonts (use system fonts). The file will be opened offline.
+4. **After the closing fence, write exactly one short sentence** describing what you created (e.g. "Created a two-page project plan with timeline and milestones."). Nothing else after that.
+5. **Do not explain your formatting choices**, do not ask clarifying questions before writing, do not add disclaimers. Just write the document.
+6. **If the user sends a document for editing**, rewrite it fully in the fenced block — do not output a diff or partial changes.
+7. **Default to Markdown** unless the user explicitly asks for a web page, HTML, or something visual/styled.
+
+## Decision guide (use this, do not deliberate)
+- "write me a report / plan / notes / essay / outline" → \`\`\`md
+- "make a web page / landing page / portfolio / dashboard" → \`\`\`html
+- "edit this document" → same format as the input, fully rewritten
+- "summarize this" → \`\`\`md (short document with key points)
+- "make it look nice / styled" → \`\`\`html`,
   deep: `You are Peek Deep, a private on-device document analysis assistant. The user has loaded one or more local documents for private analysis.
 
 Answer questions using ONLY the provided document context. If the answer is not in the documents, say so clearly — never fabricate information. Format responses in markdown with headers and bullet points where helpful.`,
@@ -127,12 +171,21 @@ export function splitStream(raw: string): { answer: string; thinking: string; in
 }
 
 // ── Utility: detect fenced ```md or ```html block ──────────
+// Uses lastIndexOf to correctly handle MD/HTML that contains inner
+// code fences — lazy regex [\s\S]*? would cut off at the first ```.
 export function detectArtifact(text: string): { type: 'html' | 'md'; source: string } | null {
-  const htmlMatch = text.match(/```html\s*([\s\S]*?)```/i);
-  if (htmlMatch) return { type: 'html', source: htmlMatch[1].trim() };
-  const mdMatch = text.match(/```(?:md|markdown)\s*([\s\S]*?)```/i);
-  if (mdMatch) return { type: 'md', source: mdMatch[1].trim() };
-  return null;
+  return extractFence(text, /```html\s*/i, 'html') ?? extractFence(text, /```(?:md|markdown)\s*/i, 'md');
+}
+
+function extractFence(text: string, openRe: RegExp, type: 'html' | 'md'): { type: 'html' | 'md'; source: string } | null {
+  const openMatch = openRe.exec(text);
+  if (!openMatch) return null;
+  const contentStart = openMatch.index + openMatch[0].length;
+  const rest = text.slice(contentStart);
+  // Use lastIndexOf so inner ``` fences inside the content don't close us early
+  const closeIdx = rest.lastIndexOf('```');
+  const source = (closeIdx !== -1 ? rest.slice(0, closeIdx) : rest).trim();
+  return source ? { type, source } : null;
 }
 
 export const DEFAULT_PROMPTS: Record<string, string> = {

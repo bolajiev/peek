@@ -26,6 +26,7 @@ import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
 import ModelGalleryPicker from '../components/ModelGalleryPicker';
 import MdPreviewPanel from '../components/MdPreviewPanel';
+import HtmlPreviewPanel from '../components/HtmlPreviewPanel';
 
 interface GeneratedFile { name: string; fileUri: string; artifactType: 'md' | 'html'; }
 
@@ -64,6 +65,7 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [attachedDoc, setAttachedDoc] = useState<{ name: string; content: string } | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [modelName, setModelName] = useState('');
   const [modelLoading, setModelLoading] = useState(true);
@@ -78,6 +80,9 @@ export default function ChatScreen() {
   const [mdPanelVisible, setMdPanelVisible] = useState(false);
   const [mdPanelSource, setMdPanelSource] = useState('');
   const [mdPanelFile, setMdPanelFile] = useState<GeneratedFile | undefined>();
+  const [htmlPanelVisible, setHtmlPanelVisible] = useState(false);
+  const [htmlPanelSource, setHtmlPanelSource] = useState('');
+  const [htmlPanelFile, setHtmlPanelFile] = useState<GeneratedFile | undefined>();
 
   const scrollRef = useRef<ScrollView>(null);
   const currentRunRef = useRef<any>(null);
@@ -200,13 +205,18 @@ export default function ChatScreen() {
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text && !attachedImage) return;
+    if (!text && !attachedImage && !attachedDoc) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setInput('');
     const imgPath = attachedImage;
     setAttachedImage(null);
+    const doc = attachedDoc;
+    setAttachedDoc(null);
 
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', text, imagePath: imgPath ?? undefined };
+    const fullText = doc
+      ? `[Document: ${doc.name}]\n\n${doc.content}\n\n[End Document]${text ? `\n\n${text}` : ''}`
+      : text;
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', text: fullText, imagePath: imgPath ?? undefined };
     const allMsgs = [...messages, userMsg];
     setMessages(allMsgs);
     persistMessage(userMsg);
@@ -239,8 +249,8 @@ export default function ChatScreen() {
     try {
       const run = completion({
         modelId: mid, history, stream: true,
-        captureThinking: !fastMode,
-        generationParams: { predict: fastMode ? 256 : 600, temp: 0.7, top_k: 40 },
+        captureThinking: false,
+        generationParams: { predict: fastMode ? 256 : 2048, temp: 0.7, top_k: 40 },
       });
       currentRunRef.current = run;
       let streamed = '';
@@ -266,32 +276,32 @@ export default function ChatScreen() {
       const finalThinking = thinkingText || thinkFallback || undefined;
       const artifact = detectArtifact(displayText);
       let generatedFile: GeneratedFile | undefined;
+      // Strip artifact block from bubble text — shown via file card / MD panel instead
+      const bubbleText = artifact
+        ? displayText.replace(/```(?:html|md|markdown)[\s\S]*```/i, '').trim()
+        : displayText;
       if (artifact) {
         generatedFile = await saveArtifact(artifact.type, artifact.source);
         if (generatedFile) {
           if (artifact.type === 'md') {
-            // Open MD preview panel in-app
             setMdPanelSource(artifact.source);
             setMdPanelFile(generatedFile);
             setTimeout(() => setMdPanelVisible(true), 300);
           } else {
-            // HTML → share sheet so user can open in browser
-            Sharing.shareAsync(generatedFile.fileUri, {
-              mimeType: 'text/html',
-              dialogTitle: 'Open or save HTML file',
-              UTI: 'public.html',
-            }).catch(() => {});
+            setHtmlPanelSource(artifact.source);
+            setHtmlPanelFile(generatedFile);
+            setTimeout(() => setHtmlPanelVisible(true), 300);
           }
         }
       }
 
       setMessages(prev => prev.map(m => m.id === placeholderId
-        ? { ...m, text: displayText, streaming: false, generatedFile, thinking: finalThinking }
+        ? { ...m, text: bubbleText, streaming: false, generatedFile, thinking: finalThinking }
         : m));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const aiMsg: Message = { id: placeholderId, role: 'assistant', text: displayText, thinking: finalThinking, generatedFile };
+      const aiMsg: Message = { id: placeholderId, role: 'assistant', text: bubbleText, thinking: finalThinking, generatedFile };
       persistMessage(aiMsg);
-      await updateLastMessage(convIdRef.current, displayText);
+      await updateLastMessage(convIdRef.current, bubbleText);
     } catch (err) {
       currentRunRef.current = null;
       if (!(err instanceof InferenceCancelledError)) {
@@ -325,17 +335,17 @@ export default function ChatScreen() {
       const artifactsDir = new Directory(Paths.document, 'artifacts');
       artifactsDir.create({ intermediates: true, idempotent: true });
       const ts = Date.now();
-      const tryMd = type === 'md';
-      const preferredExt = tryMd ? 'md' : 'html';
+      const preferredExt = type === 'md' ? 'md' : 'html';
       let file = new File(artifactsDir, `peek-scribe-${ts}.${preferredExt}`);
+      let savedType = type;
       try {
         file.write(source);
       } catch {
-        // Fallback: save as html if md write failed
         file = new File(artifactsDir, `peek-scribe-${ts}.html`);
         file.write(source);
+        savedType = 'html';
       }
-      return { name: file.uri.split('/').pop() ?? `peek-scribe-${ts}.${preferredExt}`, fileUri: file.uri, artifactType: type };
+      return { name: file.uri.split('/').pop() ?? `peek-scribe-${ts}.${preferredExt}`, fileUri: file.uri, artifactType: savedType };
     } catch {
       return undefined;
     }
@@ -384,6 +394,27 @@ export default function ChatScreen() {
       if (!result.canceled && result.assets?.[0]?.uri) {
         setAttachedImage(result.assets[0].uri);
       }
+    }
+  };
+
+  const handleDocAttach = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['text/plain', 'text/markdown', 'text/x-markdown', '*/*'],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    const name = asset.name ?? 'document';
+    const ext = name.split('.').pop()?.toLowerCase() ?? '';
+    if (!['txt', 'md', 'markdown', 'text'].includes(ext)) {
+      Alert.alert('Unsupported file', 'Please pick a .txt or .md file.');
+      return;
+    }
+    try {
+      const content = (await new File(asset.uri).text()).slice(0, 12000);
+      if (content.trim()) setAttachedDoc({ name, content });
+    } catch {
+      Alert.alert('Could not read file', 'The file could not be opened.');
     }
   };
 
@@ -480,9 +511,23 @@ export default function ChatScreen() {
                 </TouchableOpacity>
               </View>
             )}
+            {attachedDoc && (
+              <View style={[styles.attachPreviewBar, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
+                <View style={[styles.docAttachBadge, { backgroundColor: theme.accent + '22', borderColor: theme.accent + '55' }]}>
+                  <Text style={[styles.docAttachBadgeText, { color: theme.accent }]}>doc</Text>
+                </View>
+                <Text style={[styles.attachLabel, { color: theme.textSecondary }]} numberOfLines={1}>{attachedDoc.name}</Text>
+                <TouchableOpacity onPress={() => setAttachedDoc(null)}>
+                  <Text style={[styles.attachRemove, { color: theme.textSecondary }]}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             <Animated.View style={[styles.inputBar, { backgroundColor: theme.card, borderTopColor: theme.border, paddingBottom: inputPadBot }]}>
               <TouchableOpacity style={styles.attachBtn} onPress={handleAttach} activeOpacity={0.7}>
-                <Text style={[styles.attachIcon, { color: theme.textSecondary }]}>{mode === 'document' ? '📄' : '+'}</Text>
+                <Text style={[styles.attachIcon, { color: theme.textSecondary }]}>+</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.attachBtn} onPress={handleDocAttach} activeOpacity={0.7}>
+                <Text style={[styles.docBtnText, { color: theme.textSecondary }]}>doc</Text>
               </TouchableOpacity>
               <TextInput
                 style={[styles.textInput, { color: theme.text }]}
@@ -501,12 +546,12 @@ export default function ChatScreen() {
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
-                  style={[styles.sendBtn, { backgroundColor: (input.trim() || attachedImage) && !modelLoading ? theme.accent : theme.border }]}
+                  style={[styles.sendBtn, { backgroundColor: (input.trim() || attachedImage || attachedDoc) && !modelLoading ? theme.accent : theme.border }]}
                   onPress={handleSend}
-                  disabled={(!input.trim() && !attachedImage) || modelLoading}
+                  disabled={(!input.trim() && !attachedImage && !attachedDoc) || modelLoading}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.sendIcon, { color: (input.trim() || attachedImage) ? theme.accentFg : theme.textSecondary }]}>↑</Text>
+                  <Text style={[styles.sendIcon, { color: (input.trim() || attachedImage || attachedDoc) ? theme.accentFg : theme.textSecondary }]}>↑</Text>
                 </TouchableOpacity>
               )}
             </Animated.View>
@@ -538,6 +583,14 @@ export default function ChatScreen() {
         fileName={mdPanelFile?.name ?? 'document.md'}
         fileUri={mdPanelFile?.fileUri}
         onClose={() => setMdPanelVisible(false)}
+        theme={theme}
+      />
+      <HtmlPreviewPanel
+        visible={htmlPanelVisible}
+        source={htmlPanelSource}
+        fileName={htmlPanelFile?.name ?? 'page.html'}
+        fileUri={htmlPanelFile?.fileUri}
+        onClose={() => setHtmlPanelVisible(false)}
         theme={theme}
       />
     </View>
@@ -708,6 +761,9 @@ const styles = StyleSheet.create({
   goModelText: { fontSize: 15, fontWeight: '800' },
   attachPreviewBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 10, borderTopWidth: 1 },
   attachThumb: { width: 40, height: 40, borderRadius: 8 },
+  docBtnText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
+  docAttachBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
+  docAttachBadgeText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.4 },
   attachLabel: { flex: 1, fontSize: 13 },
   attachRemove: { fontSize: 16, padding: 4 },
   inputBar: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingTop: 10, gap: 8, borderTopWidth: 1 },
