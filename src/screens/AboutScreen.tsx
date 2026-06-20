@@ -9,10 +9,11 @@ import { IconBack } from '../components/Icons';
 const DOWNLOAD_URL = 'https://linktr.ee/peekapp';
 
 const FEATURES = [
-  { emoji: '📷', title: 'Peek Lens', desc: 'Scan documents and images with on-device vision AI.' },
-  { emoji: '🎙️', title: 'Peek Voice', desc: 'Record speech and get live transcripts and AI summaries.' },
-  { emoji: '✍️', title: 'Peek Scribe', desc: 'Chat privately with a powerful language model.' },
-  { emoji: '🔬', title: 'Peek Deep', desc: 'Upload files and ask questions about their content.' },
+  { tag: 'Lens', title: 'Peek Lens', desc: 'Point your camera at anything — food labels, documents, or objects — and get instant on-device analysis.' },
+  { tag: 'Voice', title: 'Peek Voice', desc: 'Record or upload audio and get live transcriptions with AI-generated summaries, entirely offline.' },
+  { tag: 'Scribe', title: 'Peek Scribe', desc: 'Draft documents, meal plans, reports, and notes. Export as markdown or HTML — all generated on your phone.' },
+  { tag: 'Deep', title: 'Peek Deep', desc: 'Upload files and ask detailed questions about their content. Private research without the cloud.' },
+  { tag: 'Chat', title: 'AI Chat', desc: 'Have open-ended conversations with a local language model. History saved on-device across sessions.' },
 ];
 
 export default function AboutScreen() {
@@ -66,9 +67,9 @@ export default function AboutScreen() {
         <View style={styles.hero}>
           <Image source={require('../../peeklogo.png')} style={styles.logo} />
           <Text style={[styles.appName, { color: theme.text }]}>Peek</Text>
-          <Text style={[styles.tagline, { color: theme.textSecondary }]}>AI that runs on your phone.</Text>
-          <View style={[styles.badgeRow]}>
-            {['Private', 'Offline', 'Free'].map(b => (
+          <Text style={[styles.tagline, { color: theme.textSecondary }]}>Private AI that runs on your phone.</Text>
+          <View style={styles.badgeRow}>
+            {['Private', 'Offline', 'No Cloud'].map(b => (
               <View key={b} style={[styles.badge, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
                 <Text style={[styles.badgeText, { color: theme.textSecondary }]}>{b}</Text>
               </View>
@@ -80,15 +81,17 @@ export default function AboutScreen() {
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Text style={[styles.cardTitle, { color: theme.text }]}>What is Peek?</Text>
           <Text style={[styles.cardBody, { color: theme.textSecondary }]}>
-            Peek is a private AI assistant that runs entirely on your device. No internet connection, no data collection, no subscriptions. Everything stays on your phone.
+            Peek is a fully private AI assistant that runs entirely on your device using the QVAC SDK. No internet required, no data collection, no subscriptions. Five modules — Vision, Voice, Scribe, Deep Research, and AI Chat — all powered by on-device language models.
           </Text>
         </View>
 
         {/* Features */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Features</Text>
-        {FEATURES.map(f => (
-          <View key={f.title} style={[styles.featureRow, { borderColor: theme.border }]}>
-            <Text style={styles.featureEmoji}>{f.emoji}</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Modules</Text>
+        {FEATURES.map((f, i) => (
+          <View key={f.tag} style={[styles.featureRow, { borderColor: theme.border, borderBottomWidth: i < FEATURES.length - 1 ? 1 : 0 }]}>
+            <View style={[styles.featureTag, { backgroundColor: theme.accent + '18', borderColor: theme.accent + '44' }]}>
+              <Text style={[styles.featureTagText, { color: theme.accent }]}>{f.tag}</Text>
+            </View>
             <View style={styles.featureBody}>
               <Text style={[styles.featureTitle, { color: theme.text }]}>{f.title}</Text>
               <Text style={[styles.featureDesc, { color: theme.textSecondary }]}>{f.desc}</Text>
@@ -96,8 +99,16 @@ export default function AboutScreen() {
           </View>
         ))}
 
-        {/* Download */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary, marginTop: 8 }]}>Get the App</Text>
+        {/* Privacy */}
+        <View style={[styles.privacyCard, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
+          <View style={[styles.privacyDot, { backgroundColor: theme.accent }]} />
+          <Text style={[styles.privacyText, { color: theme.textSecondary }]}>
+            All AI inference runs locally on your device using the QVAC SDK. Your data never leaves your phone — no servers, no telemetry, no accounts.
+          </Text>
+        </View>
+
+        {/* Update */}
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary, marginTop: 8 }]}>Updates</Text>
         <TouchableOpacity
           style={[styles.downloadBtn, { backgroundColor: theme.accent, opacity: checking ? 0.7 : 1 }]}
           onPress={handleCheckUpdates}
@@ -110,15 +121,7 @@ export default function AboutScreen() {
         </TouchableOpacity>
         <Text style={[styles.urlHint, { color: theme.textSecondary }]}>{DOWNLOAD_URL}</Text>
 
-        {/* Privacy */}
-        <View style={[styles.privacyCard, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
-          <Text style={styles.lockEmoji}>🔒</Text>
-          <Text style={[styles.privacyText, { color: theme.textSecondary }]}>
-            Your data never leaves your device. AI processing happens 100% on-device using QVAC SDK.
-          </Text>
-        </View>
-
-        <Text style={[styles.version, { color: theme.textSecondary }]}>Peek v1.0 · Built with QVAC SDK</Text>
+        <Text style={[styles.version, { color: theme.textSecondary }]}>Peek v1.0 · QVAC SDK · On-Device AI</Text>
         <View style={{ height: 40 }} />
       </ScrollView>
     </Animated.View>
@@ -151,23 +154,26 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', marginBottom: 10,
   },
   featureRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 14,
-    borderBottomWidth: 1, paddingVertical: 13,
+    flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingVertical: 14,
   },
-  featureEmoji: { fontSize: 22, width: 32, textAlign: 'center' },
+  featureTag: {
+    borderWidth: 1, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 4,
+    alignSelf: 'flex-start', minWidth: 48, alignItems: 'center',
+  },
+  featureTagText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
   featureBody: { flex: 1, gap: 3 },
   featureTitle: { fontSize: 14, fontWeight: '700' },
   featureDesc: { fontSize: 13, lineHeight: 19 },
+  privacyCard: {
+    borderRadius: 14, borderWidth: 1, padding: 16,
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 20, marginTop: 8,
+  },
+  privacyDot: { width: 8, height: 8, borderRadius: 4, marginTop: 5, flexShrink: 0 },
+  privacyText: { flex: 1, fontSize: 13, lineHeight: 19 },
   downloadBtn: {
     borderRadius: 16, paddingVertical: 17, alignItems: 'center', marginBottom: 8, marginTop: 4,
   },
   downloadBtnText: { fontSize: 16, fontWeight: '800' },
-  urlHint: { fontSize: 11, textAlign: 'center', marginBottom: 16 },
-  privacyCard: {
-    borderRadius: 14, borderWidth: 1, padding: 16,
-    flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16,
-  },
-  lockEmoji: { fontSize: 24 },
-  privacyText: { flex: 1, fontSize: 13, lineHeight: 19 },
+  urlHint: { fontSize: 11, textAlign: 'center', marginBottom: 20 },
   version: { fontSize: 11, textAlign: 'center', marginBottom: 8 },
 });
