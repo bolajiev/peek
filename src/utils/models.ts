@@ -3,12 +3,14 @@ import {
   MEDGEMMA_4B_IT_Q4_1,
   SMOLVLM2_500M_MULTIMODAL_Q8_0,
   MMPROJ_SMOLVLM2_500M_MULTIMODAL_Q8_0,
+  GEMMA4_2B_MULTIMODAL_Q4_K_M,
 } from '@qvac/sdk';
 import { ModelInfo } from '../types';
 
 export const MODEL_KEYS = {
   TEXT_FAST: 'text-fast',
   TEXT_HEALTH: 'text-health',
+  TEXT_CODE: 'text-code',
   VISION: 'vision',
 } as const;
 
@@ -38,6 +40,17 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     sizeBytes: 2_564_052_800,
     modelSrc: MEDGEMMA_4B_IT_Q4_1.src,
     supports: ['text', 'health'],
+  },
+  {
+    id: MODEL_KEYS.TEXT_CODE,
+    name: 'Gemma 4 2B',
+    modelType: 'text',
+    tagline: 'Better HTML, code, and games.',
+    description: 'Gemma 4 E2B by Google. Stronger at writing games, interactive HTML, and code. Optional download (~2.7GB).',
+    size: '2.7GB',
+    sizeBytes: 2_700_000_000,
+    modelSrc: GEMMA4_2B_MULTIMODAL_Q4_K_M.src,
+    supports: ['text'],
   },
   {
     id: MODEL_KEYS.VISION,
@@ -100,8 +113,14 @@ Examples:
 For: notes, reports, plans, essays, outlines, READMEs, meeting notes, to-do lists, resumes, cover letters, summaries, any text-based document.
 
 ### HTML (\`\`\`html)
-For: web pages, landing pages, portfolios, dashboards, forms, styled documents.
-HTML MUST be fully self-contained (all CSS in \`<style>\` tag inside \`<head>\`, no external CDNs, no external fonts — the file is opened offline).
+For: web pages, landing pages, portfolios, dashboards, forms, styled documents, games, interactive UI.
+HTML MUST be fully self-contained: all CSS in a \`<style>\` tag, all JavaScript in a \`<script>\` tag, no external CDNs, no external fonts, no imports — the file runs completely offline.
+
+When writing a game or interactive UI:
+- Implement EVERY rule the user specifies (turns, win detection, scoring, restart button).
+- No placeholders, no "TODO" comments, no unfinished functions.
+- Test the logic mentally before finishing — a game that crashes or has wrong rules is not acceptable.
+- Target mobile screens (max-width 420px, support touch events where relevant).
 
 ## Rules when writing a document
 1. Output the COMPLETE content. Never truncate with "..." or "[rest of content here]".

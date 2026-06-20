@@ -358,49 +358,55 @@ export default function AIChatScreen() {
             </TouchableOpacity>
           </View>
         )}
-        <View style={[styles.inputBar, { borderTopColor: theme.border, backgroundColor: theme.background }]}>
-          {isTyping ? (
-            <TouchableOpacity style={[styles.stopBtn, { borderColor: theme.border }]} onPress={handleStop} activeOpacity={0.7}>
-              <Text style={[styles.stopBtnText, { color: theme.text }]}>Stop</Text>
-            </TouchableOpacity>
-          ) : (
-            <>
-              <TouchableOpacity
-                onPress={() => setFastMode(f => !f)}
-                style={[styles.modeToggle, { backgroundColor: fastMode ? theme.accent + '22' : theme.card, borderColor: fastMode ? theme.accent : theme.border }]}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={[styles.modeToggleText, { color: fastMode ? theme.accent : theme.textSecondary }]}>
-                  {fastMode ? 'Fast' : 'Long'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.attachBtn} onPress={handleDocAttach} activeOpacity={0.7}>
-                <Text style={[styles.attachBtnText, { color: theme.textSecondary }]}>+</Text>
-              </TouchableOpacity>
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
-                placeholder={noModel ? 'Download a model first...' : 'Ask anything...'}
-                placeholderTextColor={theme.textSecondary}
-                value={input}
-                onChangeText={setInput}
-                multiline
-                maxLength={4000}
-                editable={!modelLoading && !noModel}
-                returnKeyType="default"
-              />
-              <TouchableOpacity
-                style={[styles.sendBtn, { backgroundColor: input.trim() && !modelLoading && !noModel ? theme.accent : theme.border }]}
-                onPress={handleSend}
-                disabled={!input.trim() || isTyping || modelLoading || noModel}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.sendBtnText, { color: input.trim() ? theme.accentFg : theme.textSecondary }]}>↑</Text>
-              </TouchableOpacity>
-            </>
-          )}
-          {isTyping && (
-            <Text style={[styles.genTimer, { color: theme.textSecondary }]}>{genElapsed}s</Text>
-          )}
+        <View style={styles.inputWrap}>
+          <View style={[styles.inputContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <TextInput
+              style={[styles.textInput, { color: theme.text }]}
+              placeholder={noModel ? 'Download a model first...' : 'Ask anything...'}
+              placeholderTextColor={theme.textSecondary}
+              value={input}
+              onChangeText={setInput}
+              multiline
+              maxLength={4000}
+              editable={!modelLoading && !noModel && !isTyping}
+              returnKeyType="default"
+            />
+            <View style={styles.inputToolbar}>
+              {isTyping ? (
+                <>
+                  <TouchableOpacity style={[styles.stopBtn, { borderColor: theme.border }]} onPress={handleStop} activeOpacity={0.7}>
+                    <Text style={[styles.stopBtnText, { color: theme.text }]}>Stop</Text>
+                  </TouchableOpacity>
+                  {genElapsed > 0 && <Text style={[styles.genTimer, { color: theme.textSecondary }]}>{genElapsed}s</Text>}
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity style={styles.toolbarAttach} onPress={handleDocAttach} activeOpacity={0.7}>
+                    <Text style={[styles.toolbarAttachText, { color: theme.textSecondary }]}>+</Text>
+                  </TouchableOpacity>
+                  <View style={styles.toolbarRight}>
+                    <TouchableOpacity
+                      onPress={() => setFastMode(f => !f)}
+                      style={[styles.modeChip, { borderColor: theme.border }]}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={[styles.modeChipText, { color: theme.textSecondary }]}>
+                        {fastMode ? 'Fast' : 'Long'} ▾
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.sendBtn, { backgroundColor: input.trim() && !modelLoading && !noModel ? theme.accent : theme.border }]}
+                      onPress={handleSend}
+                      disabled={!input.trim() || isTyping || modelLoading || noModel}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.sendBtnText, { color: input.trim() ? theme.accentFg : theme.textSecondary }]}>↑</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
         </View>
       </Animated.View>
 
@@ -511,17 +517,20 @@ const styles = StyleSheet.create({
   thinkingBox: { padding: 10, borderRadius: 10, borderWidth: 1 },
   thinkingText: { fontSize: 12, lineHeight: 18, fontStyle: 'italic' },
   bubbleActions: { flexDirection: 'row', gap: 8, marginTop: 2 },
-  inputBar: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth },
-  input: { flex: 1, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, maxHeight: 120 },
-  sendBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  sendBtnText: { fontSize: 18, fontWeight: '700' },
-  stopBtn: { flex: 1, borderRadius: 20, borderWidth: 1, paddingVertical: 12, alignItems: 'center' },
-  stopBtnText: { fontSize: 14, fontWeight: '700', letterSpacing: 0.4 },
-  genTimer: { fontSize: 12, alignSelf: 'flex-end', paddingBottom: 12 },
-  modeToggle: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, marginRight: 4 },
-  modeToggleText: { fontSize: 12, fontWeight: '600' },
-  attachBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, marginRight: 4 },
-  attachBtnText: { fontSize: 18, fontWeight: '400' },
+  inputWrap: { paddingHorizontal: 12, paddingTop: 8 },
+  inputContainer: { borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 },
+  textInput: { fontSize: 15, maxHeight: 120, minHeight: 20 },
+  inputToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
+  toolbarAttach: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
+  toolbarAttachText: { fontSize: 22, fontWeight: '300', lineHeight: 26 },
+  toolbarRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  modeChip: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4 },
+  modeChipText: { fontSize: 12, fontWeight: '600' },
+  sendBtn: { width: 34, height: 34, borderRadius: 17, justifyContent: 'center', alignItems: 'center' },
+  sendBtnText: { fontSize: 16, fontWeight: '700' },
+  stopBtn: { flex: 1, borderRadius: 12, borderWidth: 1, paddingVertical: 8, alignItems: 'center' },
+  stopBtnText: { fontSize: 14, fontWeight: '700' },
+  genTimer: { fontSize: 12, paddingLeft: 8 },
   docChip: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, marginHorizontal: 12, marginBottom: 6, gap: 8 },
   docChipText: { fontSize: 12, flex: 1 },
 });

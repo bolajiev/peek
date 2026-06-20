@@ -136,7 +136,16 @@ export default function ChatScreen() {
   const rehydrateConversation = async (convId: string) => {
     const stored = await getMessages(convId);
     if (stored.length > 0) {
-      setMessages(stored.map(m => ({ id: m.id, role: m.role, text: m.content, imagePath: m.imagePath, thinking: m.thinking })));
+      setMessages(stored.map(m => ({
+        id: m.id,
+        role: m.role,
+        text: m.content,
+        imagePath: m.imagePath,
+        thinking: m.thinking,
+        generatedFile: m.artifactType && m.artifactUri && m.artifactName
+          ? { artifactType: m.artifactType, fileUri: m.artifactUri, name: m.artifactName }
+          : undefined,
+      })));
     }
   };
 
@@ -185,6 +194,9 @@ export default function ChatScreen() {
       imagePath: msg.imagePath,
       thinking: msg.thinking,
       createdAt: new Date().toISOString(),
+      artifactType: msg.generatedFile?.artifactType,
+      artifactUri: msg.generatedFile?.fileUri,
+      artifactName: msg.generatedFile?.name,
     };
     await appendMessage(cm);
     // Only update conversation title from user messages (assistant has no meaningful title)
@@ -433,6 +445,14 @@ export default function ChatScreen() {
     setMessages(prev => prev.map(m => m.id === id ? { ...m, showThinking: !m.showThinking } : m));
   };
 
+  const handleCombinedAttach = () => {
+    Alert.alert('Attach', 'What would you like to attach?', [
+      { text: 'Image', onPress: handleAttach },
+      { text: 'Document', onPress: handleDocAttach },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
@@ -519,47 +539,50 @@ export default function ChatScreen() {
                 </TouchableOpacity>
               </View>
             )}
-            <Animated.View style={[styles.inputBar, { backgroundColor: theme.card, borderTopColor: theme.border, paddingBottom: inputPadBot }]}>
-              <TouchableOpacity style={styles.attachBtn} onPress={handleAttach} activeOpacity={0.7}>
-                <Text style={[styles.attachIcon, { color: theme.textSecondary }]}>+</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.attachBtn} onPress={handleDocAttach} activeOpacity={0.7}>
-                <Text style={[styles.docBtnText, { color: theme.textSecondary }]}>doc</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modeToggle, { backgroundColor: fastMode ? theme.accent + '22' : theme.card, borderColor: fastMode ? theme.accent : theme.border }]}
-                onPress={() => setFastMode(f => !f)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={[styles.modeToggleText, { color: fastMode ? theme.accent : theme.textSecondary }]}>
-                  {fastMode ? 'Fast' : 'Long'}
-                </Text>
-              </TouchableOpacity>
-              <TextInput
-                style={[styles.textInput, { color: theme.text }]}
-                placeholder={modelLoading ? 'Loading model...' : 'Ask anything...'}
-                placeholderTextColor={theme.textSecondary}
-                value={input}
-                onChangeText={setInput}
-                multiline
-                maxLength={2000}
-                returnKeyType="default"
-                editable={!modelLoading && !isTyping}
-              />
-              {isTyping ? (
-                <TouchableOpacity style={[styles.sendBtn, { backgroundColor: theme.error }]} onPress={handleStop}>
-                  <View style={[styles.stopSquare, { backgroundColor: '#fff' }]} />
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.sendBtn, { backgroundColor: (input.trim() || attachedImage || attachedDoc) && !modelLoading ? theme.accent : theme.border }]}
-                  onPress={handleSend}
-                  disabled={(!input.trim() && !attachedImage && !attachedDoc) || modelLoading}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.sendIcon, { color: (input.trim() || attachedImage || attachedDoc) ? theme.accentFg : theme.textSecondary }]}>↑</Text>
-                </TouchableOpacity>
-              )}
+            <Animated.View style={[styles.inputWrap, { paddingBottom: inputPadBot }]}>
+              <View style={[styles.inputContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <TextInput
+                  style={[styles.textInput, { color: theme.text }]}
+                  placeholder={modelLoading ? 'Loading model...' : 'Ask anything...'}
+                  placeholderTextColor={theme.textSecondary}
+                  value={input}
+                  onChangeText={setInput}
+                  multiline
+                  maxLength={2000}
+                  returnKeyType="default"
+                  editable={!modelLoading && !isTyping}
+                />
+                <View style={styles.inputToolbar}>
+                  <TouchableOpacity style={styles.toolbarAttach} onPress={handleCombinedAttach} activeOpacity={0.7}>
+                    <Text style={[styles.toolbarAttachText, { color: theme.textSecondary }]}>+</Text>
+                  </TouchableOpacity>
+                  <View style={styles.toolbarRight}>
+                    <TouchableOpacity
+                      style={[styles.modeChip, { borderColor: theme.border }]}
+                      onPress={() => setFastMode(f => !f)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={[styles.modeChipText, { color: theme.textSecondary }]}>
+                        {fastMode ? 'Fast' : 'Long'} ▾
+                      </Text>
+                    </TouchableOpacity>
+                    {isTyping ? (
+                      <TouchableOpacity style={[styles.sendBtn, { backgroundColor: theme.error }]} onPress={handleStop}>
+                        <View style={[styles.stopSquare, { backgroundColor: '#fff' }]} />
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={[styles.sendBtn, { backgroundColor: (input.trim() || attachedImage || attachedDoc) && !modelLoading ? theme.accent : theme.border }]}
+                        onPress={handleSend}
+                        disabled={(!input.trim() && !attachedImage && !attachedDoc) || modelLoading}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.sendIcon, { color: (input.trim() || attachedImage || attachedDoc) ? theme.accentFg : theme.textSecondary }]}>↑</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </View>
             </Animated.View>
           </>
         )}
@@ -752,8 +775,6 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 11, marginTop: 1 },
   headerRight: { alignItems: 'flex-end', gap: 6 },
   clearText: { fontSize: 13, fontWeight: '600' },
-  modeToggle: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },
-  modeToggleText: { fontSize: 11, fontWeight: '700' },
   msgList: { flex: 1 },
   msgListContent: { padding: 16, gap: 10, paddingBottom: 24 },
   bubbleRow: { flexDirection: 'row', marginBottom: 4 },
@@ -776,18 +797,22 @@ const styles = StyleSheet.create({
   goModelText: { fontSize: 15, fontWeight: '800' },
   attachPreviewBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 10, borderTopWidth: 1 },
   attachThumb: { width: 40, height: 40, borderRadius: 8 },
-  docBtnText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
   docAttachBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
   docAttachBadgeText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.4 },
   attachLabel: { flex: 1, fontSize: 13 },
   attachRemove: { fontSize: 16, padding: 4 },
-  inputBar: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingTop: 10, gap: 8, borderTopWidth: 1 },
-  attachBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
-  attachIcon: { fontSize: 24, fontWeight: '300', lineHeight: 28 },
-  textInput: { flex: 1, fontSize: 16, maxHeight: 120, paddingTop: 8, paddingBottom: 8 },
-  sendBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-  sendIcon: { fontSize: 18, fontWeight: '700' },
-  stopSquare: { width: 14, height: 14, borderRadius: 2 },
+  inputWrap: { paddingHorizontal: 12, paddingTop: 8 },
+  inputContainer: { borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 },
+  textInput: { fontSize: 16, maxHeight: 120, minHeight: 20 },
+  inputToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
+  toolbarAttach: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
+  toolbarAttachText: { fontSize: 22, fontWeight: '300', lineHeight: 26 },
+  toolbarRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  modeChip: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4 },
+  modeChipText: { fontSize: 12, fontWeight: '600' },
+  sendBtn: { width: 34, height: 34, borderRadius: 17, justifyContent: 'center', alignItems: 'center' },
+  sendIcon: { fontSize: 16, fontWeight: '700' },
+  stopSquare: { width: 12, height: 12, borderRadius: 2 },
   thinkingLive: { gap: 6 },
   thinkingLiveLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
   thinkingLiveText: { fontSize: 12, lineHeight: 18, fontStyle: 'italic' },

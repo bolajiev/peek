@@ -28,7 +28,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   topK: 40,
   topP: 0.95,
   repeatPenalty: 1.1,
-  maxTokens: 1024,
+  maxTokens: 2048,
 };
 
 // App-private document storage — no runtime permission required on any platform.

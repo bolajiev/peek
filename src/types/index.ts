@@ -36,6 +36,9 @@ export interface ChatMessage {
   imagePath?: string;
   thinking?: string;
   createdAt: string;
+  artifactType?: 'md' | 'html';
+  artifactUri?: string;
+  artifactName?: string;
 }
 
 export interface DownloadedModel extends ModelInfo {
