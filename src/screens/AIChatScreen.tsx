@@ -174,7 +174,7 @@ export default function AIChatScreen() {
         modelId: mid,
         history: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
         stream: true,
-        captureThinking: !fastMode,
+        captureThinking: false,
         generationParams: { predict: fastMode ? 256 : gp.maxTokens, temp: fastMode ? 0.7 : gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty },
       });
       currentRunRef.current = run;
@@ -277,7 +277,7 @@ export default function AIChatScreen() {
           style={[styles.modeBtn, { backgroundColor: fastMode ? theme.accent + '22' : theme.cardAlt }]}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={styles.modeBtnIcon}>{fastMode ? '⚡' : '🧠'}</Text>
+          <Text style={[styles.modeBtnText, { color: fastMode ? theme.accent : theme.textSecondary }]}>{fastMode ? 'Fast' : 'Long'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -322,7 +322,7 @@ export default function AIChatScreen() {
             msg={msg}
             theme={theme}
             onToggleThinking={() => toggleThinking(msg.id)}
-            showThinkToggle={!fastMode}
+            showThinkToggle={false}
           />
         ))}
         {isTyping && messages[messages.length - 1]?.role !== 'assistant' && <TypingIndicator theme={theme} />}
@@ -450,8 +450,8 @@ const styles = StyleSheet.create({
   modelDot: { width: 7, height: 7, borderRadius: 3.5 },
   modelPillText: { fontSize: 13, fontWeight: '700', flexShrink: 1 },
   modelPillChevron: { fontSize: 10 },
-  modeBtn: { borderRadius: 8, padding: 6, width: 34, height: 34, justifyContent: 'center', alignItems: 'center' },
-  modeBtnIcon: { fontSize: 15 },
+  modeBtn: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, height: 34, justifyContent: 'center', alignItems: 'center' },
+  modeBtnText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.2 },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 28, paddingTop: 60 },
   emptyTitle: { fontSize: 28, fontWeight: '800', marginBottom: 8, letterSpacing: -0.4 },
   emptySub: { fontSize: 14, textAlign: 'center', lineHeight: 21, marginBottom: 24 },

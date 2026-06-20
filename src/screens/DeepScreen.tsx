@@ -254,10 +254,11 @@ export default function DeepScreen() {
 
       const gp = await getGenParams();
       let full = '';
+      let thinkingFull = '';
       const run = completion({
         modelId: llmModelId, history: msgs, stream: true,
-        captureThinking: false,
-        generationParams: { predict: gp.maxTokens, temp: gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty },
+        captureThinking: true,
+        generationParams: { predict: Math.min(gp.maxTokens, 1024), temp: gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty },
       });
       currentRunRef.current = run;
       for await (const ev of run.events) {
@@ -266,15 +267,18 @@ export default function DeepScreen() {
           const { answer: visible } = splitStream(full);
           setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: visible || '▍' } : m));
           scrollRef.current?.scrollToEnd({ animated: false });
+        } else if ((ev as any).type === 'thinkingDelta') {
+          thinkingFull += (ev as any).text;
         }
       }
       currentRunRef.current = null;
 
-      const { text: cleanFull } = stripThink(full);
+      const { text: cleanFull, thinking: thinkFallback } = stripThink(full);
       const finalText = cleanFull.trim() || 'No response.';
+      const finalThinking = thinkingFull || thinkFallback || undefined;
       setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: finalText } : m));
-      const aiCm: ChatMessage = { id: placeholderId, conversationId: convIdRef.current, role: 'assistant', content: finalText, createdAt: new Date().toISOString() };
-      appendMessage(aiCm);
+      const aiCm: ChatMessage = { id: placeholderId, conversationId: convIdRef.current, role: 'assistant', content: finalText, thinking: finalThinking, createdAt: new Date().toISOString() };
+      await appendMessage(aiCm);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e) {
       if (!(e instanceof InferenceCancelledError)) {

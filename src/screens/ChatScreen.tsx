@@ -11,6 +11,8 @@ import { File, Directory, Paths } from 'expo-file-system';
 import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
+import * as IntentLauncher from 'expo-intent-launcher';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
 import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
@@ -346,24 +348,27 @@ export default function ChatScreen() {
 
   const shareArtifact = async (file: GeneratedFile) => {
     if (file.artifactType === 'md') {
-      // Re-open the in-app MD preview panel
       setMdPanelFile(file);
       setMdPanelVisible(true);
       return;
     }
-    // HTML → share sheet so user can pick browser
+    // HTML → open directly in browser via content URI intent
     try {
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(file.fileUri, {
-          mimeType: 'text/html',
-          dialogTitle: 'Open in Browser',
-          UTI: 'public.html',
-        });
-      } else {
-        Alert.alert('File saved', `Saved as: ${file.name}`);
-      }
-    } catch {}
+      const contentUri = await FileSystemLegacy.getContentUriAsync(file.fileUri);
+      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+        data: contentUri,
+        type: 'text/html',
+        flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+      });
+    } catch {
+      // Fallback to share sheet if intent fails
+      try {
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(file.fileUri, { mimeType: 'text/html', dialogTitle: 'Open in Browser', UTI: 'public.html' });
+        }
+      } catch {}
+    }
   };
 
   const handleAttach = async () => {

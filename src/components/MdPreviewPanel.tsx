@@ -70,10 +70,12 @@ export default function MdPreviewPanel({ visible, source, fileName, fileUri, onC
     strong: { fontWeight: '700', color: theme.text } as any,
     em: { fontStyle: 'italic', color: theme.text } as any,
     link: { color: theme.accent } as any,
-    table: { borderColor: theme.border, borderWidth: 1, borderRadius: 6 } as any,
-    th: { backgroundColor: theme.cardAlt, fontWeight: '700', color: theme.text } as any,
-    td: { color: theme.text } as any,
-    tr: { borderBottomColor: theme.border } as any,
+    table: { borderWidth: 1, borderColor: theme.border, borderRadius: 6, marginVertical: 8, overflow: 'hidden' } as any,
+    thead: { backgroundColor: theme.cardAlt } as any,
+    tbody: {} as any,
+    th: { flex: 1, padding: 8, fontWeight: '700', color: theme.text, borderRightWidth: 1, borderColor: theme.border, fontSize: 13 } as any,
+    td: { flex: 1, padding: 8, color: theme.text, borderRightWidth: 1, borderColor: theme.border, fontSize: 13 } as any,
+    tr: { flexDirection: 'row', borderBottomWidth: 1, borderColor: theme.border } as any,
     hr: { backgroundColor: theme.border } as any,
   };
 
