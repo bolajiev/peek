@@ -76,7 +76,7 @@ export default function DeepScreen() {
         setMessages(msgs.map(m => ({ id: m.id, role: m.role as 'user' | 'assistant', text: m.content })));
         setPhase('ready');
         setSourceTitle('Previous session');
-      });
+      }).catch(() => {});
     }
     const sub = Keyboard.addListener('keyboardDidShow', () => {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -169,9 +169,9 @@ export default function DeepScreen() {
     sessionSavedRef.current = false;
     try {
       const docsDir = new Directory(Paths.document, 'peek', 'deep');
-      docsDir.create({ intermediates: true, idempotent: true });
+      await docsDir.create({ intermediates: true, idempotent: true });
       const destFile = new File(docsDir, `doc_${Date.now()}_${asset.name}`);
-      new File(asset.uri).copy(destFile);
+      await new File(asset.uri).copy(destFile);
       const workingUri = destFile.exists ? destFile.uri : asset.uri;
 
       let content: string;

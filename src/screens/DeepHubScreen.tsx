@@ -30,7 +30,7 @@ export default function DeepHubScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => {
-    getDeepHistory().then(h => setHistory(h.slice(0, 10)));
+    getDeepHistory().then(h => setHistory(h.slice(0, 10))).catch(() => setHistory([]));
   }, []));
 
   return (

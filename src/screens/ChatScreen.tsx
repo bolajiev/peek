@@ -343,16 +343,16 @@ export default function ChatScreen() {
   const saveArtifact = async (type: 'md' | 'html', source: string): Promise<GeneratedFile | undefined> => {
     try {
       const artifactsDir = new Directory(Paths.document, 'artifacts');
-      artifactsDir.create({ intermediates: true, idempotent: true });
+      await artifactsDir.create({ intermediates: true, idempotent: true });
       const ts = Date.now();
       const preferredExt = type === 'md' ? 'md' : 'html';
       let file = new File(artifactsDir, `peek-scribe-${ts}.${preferredExt}`);
       let savedType = type;
       try {
-        file.write(source);
+        await file.write(source);
       } catch {
         file = new File(artifactsDir, `peek-scribe-${ts}.html`);
-        file.write(source);
+        await file.write(source);
         savedType = 'html';
       }
       return { name: file.uri.split('/').pop() ?? `peek-scribe-${ts}.${preferredExt}`, fileUri: file.uri, artifactType: savedType };
@@ -640,7 +640,7 @@ function MessageBubble({ msg, theme, onToggleThinking, onShareFile }: {
             {msg.streaming ? (
               msg.inThink ? (
                 <View style={styles.thinkingLive}>
-                  <Text style={[styles.thinkingLiveLabel, { color: theme.accent }]}>Thinking…</Text>
+                  <Text style={[styles.thinkingLiveLabel, { color: theme.accent }]}>Thinking...</Text>
                   {msg.thinking ? <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={6}>{msg.thinking}▍</Text> : null}
                 </View>
               ) : msg.text ? (

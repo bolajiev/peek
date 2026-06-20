@@ -32,7 +32,7 @@ export default function AIChatHubScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => {
-    getConversations('aichat').then(list => setConversations(list.slice(0, 20)));
+    getConversations('aichat').then(list => setConversations(list.slice(0, 20))).catch(() => setConversations([]));
   }, []));
 
   const newChat = () => navigation.navigate('AIChat', { modelId });
@@ -115,8 +115,8 @@ const styles = StyleSheet.create({
   primaryBtnText: { fontSize: 16, fontWeight: '800' },
   sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 12 },
   convItem: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 10 },
-  convDot: { width: 8, height: 8, borderRadius: 4 },
-  convBody: { flex: 1 },
+  convDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
+  convBody: { flex: 1, gap: 4 },
   convTitle: { fontSize: 14, fontWeight: '600' },
   convMeta: { fontSize: 12, marginTop: 2 },
 });

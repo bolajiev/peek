@@ -4,6 +4,7 @@ import {
   Alert, Switch,
 } from 'react-native';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme, useThemeToggle } from '../navigation/AppNavigator';
@@ -11,6 +12,8 @@ import {
   getSettings, setAccelerator, setResponseLength, clearAllData, saveSettings,
 } from '../utils/storage';
 import { Accelerator, ResponseLength } from '../types';
+
+const appVersion = Constants.expoConfig?.version ?? '1.0';
 
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
@@ -241,7 +244,7 @@ export default function SettingsScreen() {
           <Text style={[styles.dangerText, { color: theme.error }]}>Clear All Data</Text>
         </TouchableOpacity>
 
-        <Text style={[styles.footer, { color: theme.textSecondary }]}>Peek v1.0 · Built with qvac · On-Device AI</Text>
+        <Text style={[styles.footer, { color: theme.textSecondary }]}>{`Peek v${appVersion} · Built with qvac · On-Device AI`}</Text>
       </ScrollView>
     </View>
   );

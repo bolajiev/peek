@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image, Alert, ActivityIndicator } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
@@ -11,12 +11,20 @@ export default function HistoryScreen() {
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
   const [items, setItems] = useState<HistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useFocusEffect(useCallback(() => { load(); }, []));
 
   const load = async () => {
-    const hist = await getHistory();
-    setItems([...hist].reverse());
+    setLoading(true);
+    try {
+      const hist = await getHistory();
+      setItems([...hist].reverse());
+    } catch {
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleClear = () => {
@@ -83,7 +91,11 @@ export default function HistoryScreen() {
         ) : <View style={{ width: 40 }} />}
       </View>
 
-      {items.length === 0 ? (
+      {loading ? (
+        <View style={styles.empty}>
+          <ActivityIndicator size="large" color={theme.accent} />
+        </View>
+      ) : items.length === 0 ? (
         <View style={styles.empty}>
           <View style={[styles.emptyIcon, { borderColor: theme.border }]}>
             <View style={[styles.emptyIconLine, { backgroundColor: theme.border }]} />

@@ -57,6 +57,7 @@ export default function AIChatScreen() {
   const [modelLoading, setModelLoading] = useState(true);
   const [loadProgress, setLoadProgress] = useState(0);
   const [noModel, setNoModel] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [fastMode, setFastMode] = useState(false);
   const [genElapsed, setGenElapsed] = useState(0);
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -105,6 +106,7 @@ export default function AIChatScreen() {
         setModelName(target.name);
       } catch (e: any) {
         setNoModel(true);
+        setLoadError(e?.message ?? 'Failed to load model');
       } finally {
         setModelLoading(false);
       }
@@ -121,7 +123,7 @@ export default function AIChatScreen() {
         thinking: m.thinking, showThinking: false,
       }));
       setMessages(hydrated);
-    });
+    }).catch(() => {});
   }, [resumeConvId]);
 
   // ── save conversation ───────────────────────────────────
@@ -324,6 +326,9 @@ export default function AIChatScreen() {
           <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
             Ask me anything — questions, explanations, ideas, code, analysis.{'\n'}All on-device, completely private.
           </Text>
+          {noModel && loadError ? (
+            <Text style={[styles.loadErrorText, { color: theme.textSecondary }]}>{loadError}</Text>
+          ) : null}
         </View>
       )}
 
@@ -341,7 +346,7 @@ export default function AIChatScreen() {
             msg={msg}
             theme={theme}
             onToggleThinking={() => toggleThinking(msg.id)}
-            showThinkToggle={false}
+            showThinkToggle={!!msg.thinking}
           />
         ))}
         {isTyping && messages[messages.length - 1]?.role !== 'assistant' && <TypingIndicator theme={theme} />}
@@ -498,6 +503,7 @@ const styles = StyleSheet.create({
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 28, paddingTop: 60 },
   emptyTitle: { fontSize: 28, fontWeight: '800', marginBottom: 8, letterSpacing: -0.4 },
   emptySub: { fontSize: 14, textAlign: 'center', lineHeight: 21, marginBottom: 24 },
+  loadErrorText: { fontSize: 12, textAlign: 'center', marginTop: 8 },
   tipRow: { gap: 8, alignItems: 'stretch', width: '100%' },
   tipChip: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
   tipText: { fontSize: 13, fontWeight: '500' },

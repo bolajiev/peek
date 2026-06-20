@@ -139,27 +139,30 @@ export default function VoiceScreen() {
     const wId = await whisperManager.ensure().catch(() => null);
     if (!wId) { chunkProcessingRef.current = false; return; }
 
-    while (chunkQueueRef.current.length > 0) {
-      const uri = chunkQueueRef.current.shift()!;
-      try {
-        const gen = transcribeStream({ modelId: wId, audioChunk: toPath(uri) });
-        let text = '';
-        for await (const chunk of gen) { text += chunk; }
-        if (text.trim()) {
-          setTranscript(prev => {
-            const next = (prev ? prev + ' ' : '') + text.trim();
-            transcriptRef.current = next;
-            return next;
-          });
-          setTimeout(() => liveScrollRef.current?.scrollToEnd({ animated: true }), 80);
-        }
-      } catch {}
-    }
+    try {
+      while (chunkQueueRef.current.length > 0) {
+        const uri = chunkQueueRef.current.shift()!;
+        try {
+          const gen = transcribeStream({ modelId: wId, audioChunk: toPath(uri) });
+          let text = '';
+          for await (const chunk of gen) { text += chunk; }
+          if (text.trim()) {
+            setTranscript(prev => {
+              const next = (prev ? prev + ' ' : '') + text.trim();
+              transcriptRef.current = next;
+              return next;
+            });
+            setTimeout(() => liveScrollRef.current?.scrollToEnd({ animated: true }), 80);
+          }
+        } catch {}
+      }
 
-    chunkProcessingRef.current = false;
-    if (isStoppingRef.current && chunkQueueRef.current.length === 0) {
-      isStoppingRef.current = false;
-      setPhase('transcript');
+      if (isStoppingRef.current && chunkQueueRef.current.length === 0) {
+        isStoppingRef.current = false;
+        setPhase('transcript');
+      }
+    } finally {
+      chunkProcessingRef.current = false;
     }
   }, []);
 
@@ -175,10 +178,9 @@ export default function VoiceScreen() {
       await newRec.startAsync();
       recordingRef.current = newRec;
     } catch {}
-    if (cacheUri) {
-      const saved = await saveChunkToDir(cacheUri);
-      if (saved) { chunkQueueRef.current.push(saved); processChunkQueue(); }
-    }
+    if (!cacheUri) return;
+    const saved = await saveChunkToDir(cacheUri);
+    if (saved) { chunkQueueRef.current.push(saved); processChunkQueue(); }
   };
 
   // ── Record ────────────────────────────────────────────────
@@ -290,6 +292,7 @@ export default function VoiceScreen() {
         ?? synced.find(m => m.id === MODEL_KEYS.TEXT_FAST)
         ?? synced.find(m => m.modelType === 'text');
       if (!textModel) {
+        setSummary('No text model downloaded. Download a model to get AI summaries.');
         setPhase('done');
         return;
       }
@@ -322,7 +325,9 @@ export default function VoiceScreen() {
       const tx = transcriptRef.current;
       if (tx && summaryText) {
         const title = tx.slice(0, 60).replace(/\s+/g, ' ').trim() || 'Voice session';
-        saveVoiceSession({ id: Date.now().toString(), title, transcript: tx, summary: summaryText, createdAt: new Date().toISOString() });
+        try {
+          await saveVoiceSession({ id: Date.now().toString(), title, transcript: tx, summary: summaryText, createdAt: new Date().toISOString() });
+        } catch {}
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (AppState.currentState !== 'active') showDoneNotification('Peek Voice');

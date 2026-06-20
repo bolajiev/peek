@@ -54,7 +54,7 @@ export default function ArtifactPanel({ visible, type, source, title = 'artifact
     try {
       const safeName = title.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 48);
       const file = new File(Paths.document, `${safeName}_${Date.now()}.${ext}`);
-      file.write(source);
+      await file.write(source);
       if (!file.exists) throw new Error('Save failed');
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {

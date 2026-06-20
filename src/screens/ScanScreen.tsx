@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Animated,
+  View, Text, StyleSheet, TouchableOpacity, Animated, Alert,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Paths, File } from 'expo-file-system';
@@ -67,7 +67,10 @@ export default function ScanScreen() {
       }
       return;
     }
-    if (!permission?.granted) requestPermission();
+    // Fix 1: await requestPermission to avoid race with camera render
+    if (!permission?.granted) {
+      (async () => { await requestPermission(); })();
+    }
   }, [permission]));
 
   const ZOOM_STEP = 0.1;
@@ -80,31 +83,42 @@ export default function ScanScreen() {
     navigation.navigate('LensResult', { photoUri, preselectedModelId });
   };
 
+  // Fix 3: wrap entire capture body in try-catch
   const handleCapture = async () => {
     if (!cameraRef.current) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Animated.sequence([
-      Animated.timing(captureScale, { toValue: 0.88, duration: 80, useNativeDriver: true }),
-      Animated.spring(captureScale, { toValue: 1, useNativeDriver: true, friction: 4 }),
-    ]).start();
-    const photo = await cameraRef.current.takePictureAsync({ quality: 0.72, shutterSound: false });
-    if (!photo?.uri) return;
-    // Save immediately then navigate — inference happens on result screen
     try {
-      const savedFile = new File(Paths.document, `peek_${Date.now()}.jpg`);
-      new File(photo.uri).copy(savedFile);
-      navigateToResult(savedFile.uri);
-    } catch {
-      navigateToResult(photo.uri);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      Animated.sequence([
+        Animated.timing(captureScale, { toValue: 0.88, duration: 80, useNativeDriver: true }),
+        Animated.spring(captureScale, { toValue: 1, useNativeDriver: true, friction: 4 }),
+      ]).start();
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.72, shutterSound: false });
+      if (!photo?.uri) return;
+      // Fix 5: Save immediately then navigate — fall back to photo.uri on copy failure
+      try {
+        const savedFile = new File(Paths.document, `peek_${Date.now()}.jpg`);
+        new File(photo.uri).copy(savedFile);
+        navigateToResult(savedFile.uri);
+      } catch {
+        navigateToResult(photo.uri);
+      }
+    } catch (err) {
+      Alert.alert('Capture failed', 'Could not take a photo. Please try again.');
     }
   };
 
+  // Fix 4: wrap gallery picker in try-catch
   const handleGallery = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      navigateToResult(result.assets[0].uri);
-    } else if (result.canceled && launchMode === 'gallery') {
-      navigation.goBack();
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        navigateToResult(result.assets[0].uri);
+      } else if (result.canceled && launchMode === 'gallery') {
+        navigation.goBack();
+      }
+    } catch (err) {
+      Alert.alert('Gallery error', 'Could not open the photo library. Please try again.');
+      if (launchMode === 'gallery') navigation.goBack();
     }
   };
 

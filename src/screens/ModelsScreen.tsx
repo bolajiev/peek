@@ -82,7 +82,7 @@ export default function ModelsScreen() {
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     const modelFolder = new Directory(getModelsDir(), model.id);
-    modelFolder.create({ intermediates: true, idempotent: true });
+    await modelFolder.create({ intermediates: true, idempotent: true });
 
     setDownloading((prev) => ({
       ...prev,
@@ -190,7 +190,7 @@ export default function ModelsScreen() {
   const doDelete = async (modelId: string) => {
     const folder = new Directory(getModelsDir(), modelId);
     try {
-      if (folder.exists) folder.delete();
+      if (folder.exists) await folder.delete();
     } catch {}
     await removeDownloadedModel(modelId);
     await loadDownloaded();

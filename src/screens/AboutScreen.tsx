@@ -2,11 +2,13 @@ import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, ScrollView, Linking, Image, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import * as Updates from 'expo-updates';
+import Constants from 'expo-constants';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { IconBack } from '../components/Icons';
 
 const DOWNLOAD_URL = 'https://linktr.ee/peekapp';
+const appVersion = Constants.expoConfig?.version ?? '1.0';
 
 const FEATURES = [
   { tag: 'Lens', title: 'Peek Lens', desc: 'Point your camera at anything — food labels, documents, or objects — and get instant on-device analysis.' },
@@ -121,7 +123,7 @@ export default function AboutScreen() {
         </TouchableOpacity>
         <Text style={[styles.urlHint, { color: theme.textSecondary }]}>{DOWNLOAD_URL}</Text>
 
-        <Text style={[styles.version, { color: theme.textSecondary }]}>Peek v1.0 · QVAC SDK · On-Device AI</Text>
+        <Text style={[styles.version, { color: theme.textSecondary }]}>{`Peek v${appVersion} · QVAC SDK · On-Device AI`}</Text>
         <View style={{ height: 40 }} />
       </ScrollView>
     </Animated.View>

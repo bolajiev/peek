@@ -31,7 +31,7 @@ export default function ScribeHubScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => {
-    getConversations('scribe').then(list => setConversations(list.slice(0, 10)));
+    getConversations('scribe').then(list => setConversations(list.slice(0, 10))).catch(() => setConversations([]));
   }, []));
 
   const newChat = () => navigation.navigate('ScribeChat', { modelId, mode: 'chat' });

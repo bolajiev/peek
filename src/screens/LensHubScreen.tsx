@@ -30,7 +30,7 @@ export default function LensHubScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => {
-    getLensHistory().then(h => setHistory(h.slice(0, 10)));
+    getLensHistory().then(h => setHistory(h.slice(0, 10))).catch(() => setHistory([]));
   }, []));
 
   const goScan = (mode: 'camera' | 'gallery') =>
