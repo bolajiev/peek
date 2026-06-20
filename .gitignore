@@ -33,6 +33,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# EAS local credentials — never commit these
+credentials.json
+
 # typescript
 *.tsbuildinfo
 

@@ -9,12 +9,14 @@
     },
     "preview": {
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "credentialsSource": "local"
       }
     },
     "production": {
       "android": {
-        "buildType": "apk"
+        "buildType": "aab",
+        "credentialsSource": "local"
       }
     }
   },
