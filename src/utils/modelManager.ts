@@ -1,6 +1,6 @@
 import {
   loadModel, unloadModel,
-  WHISPER_EN_BASE_Q8_0,
+  WHISPER_EN_TINY_Q8_0,
 } from '@qvac/sdk';
 import { DownloadedModel } from '../types';
 import { toPath } from './storage';
@@ -109,4 +109,4 @@ class DescriptorModelManager {
 }
 
 export const llmManager = new LLMManager();
-export const whisperManager = new DescriptorModelManager(WHISPER_EN_BASE_Q8_0);
+export const whisperManager = new DescriptorModelManager(WHISPER_EN_TINY_Q8_0);

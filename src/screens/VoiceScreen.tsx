@@ -203,7 +203,7 @@ export default function VoiceScreen() {
     setSummary('');
     setRecordingTime(0);
     timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
-    chunkTimerRef.current = setInterval(rotateChunk, 5000);
+    chunkTimerRef.current = setInterval(rotateChunk, 2000);
     setPhase('recording');
     startPulse();
     startWave();
