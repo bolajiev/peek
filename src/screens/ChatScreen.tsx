@@ -17,7 +17,7 @@ import { useTheme } from '../navigation/AppNavigator';
 import {
   syncModelsFromDisk, getSettings, getDefaultModelId, setDefaultModelId, getGenParams,
   getConversations, saveConversation, getMessages,
-  appendMessage, updateLastMessage, createConversationId, toPath,
+  appendMessage, createConversationId, toPath,
 } from '../utils/storage';
 import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS, stripThink, splitStream, detectArtifact } from '../utils/models';
 import { DownloadedModel, Conversation, ChatMessage } from '../types';
@@ -183,7 +183,10 @@ export default function ChatScreen() {
     };
     await appendMessage(cm);
     // Only update conversation title from user messages (assistant has no meaningful title)
-    if (msg.role === 'user') {
+    const existing = (await getConversations(MODULE_ID)).find(c => c.id === convId);
+    if (existing) {
+      await saveConversation({ ...existing, updatedAt: new Date().toISOString() });
+    } else if (msg.role === 'user') {
       const conv: Conversation = {
         id: convId,
         moduleId: MODULE_ID,
@@ -192,10 +195,6 @@ export default function ChatScreen() {
         updatedAt: new Date().toISOString(),
       };
       await saveConversation(conv);
-    } else {
-      // Update updatedAt timestamp on the conversation without changing title
-      const existing = (await getConversations(MODULE_ID)).find(c => c.id === convId);
-      if (existing) await saveConversation({ ...existing, updatedAt: new Date().toISOString() });
     }
   };
 
@@ -295,8 +294,7 @@ export default function ChatScreen() {
         : m));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const aiMsg: Message = { id: placeholderId, role: 'assistant', text: bubbleText, thinking: finalThinking, generatedFile };
-      persistMessage(aiMsg);
-      await updateLastMessage(convIdRef.current, bubbleText);
+      await persistMessage(aiMsg);
     } catch (err) {
       currentRunRef.current = null;
       if (!(err instanceof InferenceCancelledError)) {

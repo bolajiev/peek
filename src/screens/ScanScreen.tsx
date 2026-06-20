@@ -108,6 +108,11 @@ export default function ScanScreen() {
     }
   };
 
+  // Gallery mode: never render the camera view — DocumentPicker handles everything
+  if (launchMode === 'gallery') {
+    return <View style={[styles.container, { backgroundColor: theme.background }]} />;
+  }
+
   if (!permission?.granted) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center', gap: 16, padding: 40 }]}>

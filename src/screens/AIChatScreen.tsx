@@ -13,7 +13,7 @@ import { useTheme } from '../navigation/AppNavigator';
 import {
   syncModelsFromDisk, getSettings, getDefaultModelId, getGenParams,
   getConversations, saveConversation, getMessages,
-  appendMessage, updateLastMessage, createConversationId,
+  appendMessage, createConversationId,
 } from '../utils/storage';
 import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS, stripThink, splitStream } from '../utils/models';
 import { DownloadedModel, Conversation, ChatMessage } from '../types';
@@ -130,7 +130,10 @@ export default function AIChatScreen() {
       thinking: msg.thinking, createdAt: new Date().toISOString(),
     };
     await appendMessage(cm);
-    if (msg.role === 'user') {
+    const existing = (await getConversations('aichat')).find(c => c.id === convId);
+    if (existing) {
+      await saveConversation({ ...existing, updatedAt: new Date().toISOString() });
+    } else if (msg.role === 'user') {
       const conv: Conversation = {
         id: convId, moduleId: 'aichat',
         title: msg.text.slice(0, 60) || 'AI Chat',
@@ -201,8 +204,7 @@ export default function AIChatScreen() {
         : m));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const aiMsg: Message = { id: placeholderId, role: 'assistant', text: displayText, thinking: finalThinking };
-      persistMessage(aiMsg);
-      await updateLastMessage(convIdRef.current, displayText);
+      await persistMessage(aiMsg);
     } catch (err) {
       currentRunRef.current = null;
       if (!(err instanceof InferenceCancelledError)) {
