@@ -25,6 +25,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   responseLength: 'balanced',
   huggingFaceToken: '',
   temperature: 0.7,
+  topK: 40,
+  topP: 0.95,
+  repeatPenalty: 1.1,
+  maxTokens: 1024,
 };
 
 // App-private document storage — no runtime permission required on any platform.
@@ -171,6 +175,17 @@ export async function getTemperature(): Promise<number> {
 
 export async function setTemperature(temp: number): Promise<void> {
   await saveSettings({ temperature: temp });
+}
+
+export async function getGenParams(): Promise<{ temp: number; top_k: number; top_p: number; repeat_penalty: number; maxTokens: number }> {
+  const s = await getSettings();
+  return {
+    temp: s.temperature ?? 0.7,
+    top_k: s.topK ?? 40,
+    top_p: s.topP ?? 0.95,
+    repeat_penalty: s.repeatPenalty ?? 1.1,
+    maxTokens: s.maxTokens ?? 1024,
+  };
 }
 
 export async function getResponseLength(): Promise<ResponseLength> {

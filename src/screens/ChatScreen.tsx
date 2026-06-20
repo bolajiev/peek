@@ -15,7 +15,7 @@ import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import {
-  syncModelsFromDisk, getSettings, getDefaultModelId, setDefaultModelId, getTemperature,
+  syncModelsFromDisk, getSettings, getDefaultModelId, setDefaultModelId, getGenParams,
   getConversations, saveConversation, getMessages,
   appendMessage, updateLastMessage, createConversationId, toPath,
 } from '../utils/storage';
@@ -242,12 +242,12 @@ export default function ChatScreen() {
     const placeholderId = 'ai-' + Date.now();
     setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', text: '', streaming: true }]);
 
-    const temp = await getTemperature();
+    const gp = await getGenParams();
     try {
       const run = completion({
         modelId: mid, history, stream: true,
         captureThinking: false,
-        generationParams: { predict: fastMode ? 256 : 2048, temp: fastMode ? 0.7 : temp, top_k: 40 },
+        generationParams: { predict: fastMode ? 256 : gp.maxTokens, temp: fastMode ? 0.7 : gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty },
       });
       currentRunRef.current = run;
       let streamed = '';

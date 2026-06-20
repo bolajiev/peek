@@ -79,4 +79,16 @@ export interface AppSettings {
   responseLength: ResponseLength;
   huggingFaceToken: string;
   temperature: number;
+  topK: number;
+  topP: number;
+  repeatPenalty: number;
+  maxTokens: number;
+}
+
+export interface GenParams {
+  temp: number;
+  top_k: number;
+  top_p: number;
+  repeat_penalty: number;
+  maxTokens: number;
 }

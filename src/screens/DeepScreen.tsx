@@ -12,7 +12,7 @@ import { unzipSync, strFromU8 } from 'fflate';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { ragIngestText, ragQuery, buildRagContext, newRagWorkspace, closeRagWorkspace } from '../utils/ragService';
-import { syncModelsFromDisk, getSettings, getTemperature, getDefaultModelId, setDefaultModelId, toPath, saveDeepSession, appendMessage, saveConversation, createConversationId, getMessages } from '../utils/storage';
+import { syncModelsFromDisk, getSettings, getGenParams, getDefaultModelId, setDefaultModelId, toPath, saveDeepSession, appendMessage, saveConversation, createConversationId, getMessages } from '../utils/storage';
 import { ChatMessage, Conversation } from '../types';
 import { completion, cancel, loadModel, unloadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
@@ -252,11 +252,12 @@ export default function DeepScreen() {
       const aiMsg: Message = { id: placeholderId, role: 'assistant', text: '', sources: docs.length > 0 ? docs : undefined };
       setMessages([...newMessages, aiMsg]);
 
+      const gp = await getGenParams();
       let full = '';
       const run = completion({
         modelId: llmModelId, history: msgs, stream: true,
         captureThinking: false,
-        generationParams: { predict: 1024, temp: await getTemperature(), top_k: 30 },
+        generationParams: { predict: gp.maxTokens, temp: gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty },
       });
       currentRunRef.current = run;
       for await (const ev of run.events) {
