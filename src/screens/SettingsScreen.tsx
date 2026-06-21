@@ -12,6 +12,7 @@ import {
   getSettings, setAccelerator, setResponseLength, clearAllData, saveSettings,
 } from '../utils/storage';
 import { Accelerator, ResponseLength } from '../types';
+import ConfigSlider from '../components/ConfigSlider';
 
 const appVersion = Constants.expoConfig?.version ?? '1.0';
 
@@ -64,40 +65,6 @@ export default function SettingsScreen() {
     </TouchableOpacity>
   );
 
-  // ── Warnings ──────────────────────────────────────────────
-  const tempWarn = temperature > 1.0
-    ? 'High temperature — output may become erratic or repetitive.'
-    : null;
-  const topKWarn = topK > 80
-    ? 'Very broad sampling — responses may lose focus.'
-    : null;
-  const topPWarn = topP > 0.97
-    ? 'Near maximum — similar effect to high temperature.'
-    : null;
-  const repeatWarn = repeatPenalty > 1.3
-    ? 'Aggressive penalty — may produce choppy or cut-off sentences.'
-    : null;
-  const tokensWarn = maxTokens >= 4096
-    ? 'Very high — may cause out-of-memory on devices with less than 4 GB RAM.'
-    : maxTokens > 2048
-    ? 'Large outputs take more time and drain battery faster.'
-    : null;
-
-  const Warn = ({ msg }: { msg: string | null }) =>
-    msg ? <Text style={[styles.warn, { color: '#F59E0B' }]}>{msg}</Text> : null;
-
-  const ParamRow = ({ label, hint, children, warn }: {
-    label: string; hint: string; children: React.ReactNode; warn: string | null;
-  }) => (
-    <View style={styles.paramBlock}>
-      <View style={styles.paramHeader}>
-        <Text style={[styles.paramLabel, { color: theme.text }]}>{label}</Text>
-        <Text style={[styles.paramHint, { color: theme.textSecondary }]}>{hint}</Text>
-      </View>
-      <View style={styles.optionsRow}>{children}</View>
-      <Warn msg={warn} />
-    </View>
-  );
 
   const handleClearData = () => {
     Alert.alert('Clear All Data', 'This will remove all history and settings. Continue?', [
@@ -147,72 +114,77 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Generation Parameters */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Generation</Text>
+        {/* Configurations */}
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Configurations</Text>
         <View style={[styles.card, { backgroundColor: theme.card }]}>
 
-          <ParamRow
+          <ConfigSlider
+            label="Max tokens"
+            value={maxTokens}
+            min={256}
+            max={32000}
+            step={256}
+            decimals={0}
+            warn={maxTokens > 10000 ? 'Setting max tokens above 10000 may cause app to be unstable.' : null}
+            theme={theme}
+            onChange={v => { setMaxTokensState(v); set({ maxTokens: v }); }}
+          />
+
+          <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+          <ConfigSlider
+            label="TopK"
+            value={topK}
+            min={1}
+            max={100}
+            step={1}
+            decimals={0}
+            warn={null}
+            theme={theme}
+            onChange={v => { setTopKState(v); set({ topK: v }); }}
+          />
+
+          <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+          <ConfigSlider
+            label="TopP"
+            value={topP}
+            min={0}
+            max={1}
+            step={0.01}
+            decimals={2}
+            warn={null}
+            theme={theme}
+            onChange={v => { setTopPState(v); set({ topP: v }); }}
+          />
+
+          <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+          <ConfigSlider
             label="Temperature"
-            hint="Creativity vs. focus"
-            warn={tempWarn}
-          >
-            {[0.1, 0.3, 0.7, 1.0, 1.2].map(v => (
-              <OptionBtn key={v} label={v.toFixed(1)} selected={temperature === v}
-                onPress={() => { setTempState(v); set({ temperature: v }); }} />
-            ))}
-          </ParamRow>
+            value={temperature}
+            min={0}
+            max={2}
+            step={0.01}
+            decimals={2}
+            warn={null}
+            theme={theme}
+            onChange={v => { setTempState(v); set({ temperature: v }); }}
+          />
 
           <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
-          <ParamRow
-            label="Top-K"
-            hint="Vocabulary pool size"
-            warn={topKWarn}
-          >
-            {[10, 20, 40, 60, 80].map(v => (
-              <OptionBtn key={v} label={String(v)} selected={topK === v}
-                onPress={() => { setTopKState(v); set({ topK: v }); }} />
-            ))}
-          </ParamRow>
-
-          <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-          <ParamRow
-            label="Top-P"
-            hint="Nucleus sampling threshold"
-            warn={topPWarn}
-          >
-            {[0.7, 0.85, 0.92, 0.95, 1.0].map(v => (
-              <OptionBtn key={v} label={v.toFixed(2)} selected={topP === v}
-                onPress={() => { setTopPState(v); set({ topP: v }); }} />
-            ))}
-          </ParamRow>
-
-          <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-          <ParamRow
+          <ConfigSlider
             label="Repeat Penalty"
-            hint="Reduces repeated phrases"
-            warn={repeatWarn}
-          >
-            {[1.0, 1.1, 1.2, 1.3, 1.5].map(v => (
-              <OptionBtn key={v} label={v.toFixed(1)} selected={repeatPenalty === v}
-                onPress={() => { setRepeatState(v); set({ repeatPenalty: v }); }} />
-            ))}
-          </ParamRow>
-
-          <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-          <ParamRow
-            label="Max Tokens"
-            hint="Output length limit"
-            warn={tokensWarn}
-          >
-            {[256, 512, 1024, 2048, 4096].map(v => (
-              <OptionBtn key={v} label={v >= 1024 ? `${v / 1024}k` : String(v)} selected={maxTokens === v}
-                onPress={() => { setMaxTokensState(v); set({ maxTokens: v }); }} />
-            ))}
-          </ParamRow>
+            value={repeatPenalty}
+            min={1.0}
+            max={1.8}
+            step={0.05}
+            decimals={2}
+            warn={null}
+            theme={theme}
+            onChange={v => { setRepeatState(v); set({ repeatPenalty: v }); }}
+          />
 
         </View>
 

@@ -367,6 +367,12 @@ export default function ChatScreen() {
 
   const shareArtifact = async (file: GeneratedFile) => {
     if (file.artifactType === 'md') {
+      try {
+        const content = await FileSystem.readAsStringAsync(file.fileUri);
+        setMdPanelSource(content);
+      } catch {
+        setMdPanelSource('');
+      }
       setMdPanelFile(file);
       setMdPanelVisible(true);
       return;
