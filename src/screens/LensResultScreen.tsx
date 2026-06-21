@@ -116,7 +116,7 @@ export default function LensResultScreen() {
       const ttftMs = firstTokenMs > 0 ? firstTokenMs - genStart : totalMs;
       setElapsed(Math.round(totalMs / 1000));
       if (stats?.generatedTokens) setTokenCount(stats.generatedTokens);
-      logInference('Lens', modelName, ttftMs, totalMs, stats?.generatedTokens ?? 0).catch(() => {});
+      logInference('Lens', modelInfo.name, ttftMs, totalMs, stats?.generatedTokens ?? 0).catch(() => {});
 
       unregisterInferenceCancel();
       void clearInferenceNotifications();

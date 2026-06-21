@@ -28,6 +28,7 @@ interface Module {
   desc: string;
   icon: (color: string) => React.ReactNode;
   fullWidth?: boolean;
+  beta?: boolean;         // true = dim + show Beta badge (coming soon)
   modelKey?: string;      // which model key this module needs
   requiresBoth?: boolean; // vision: requires main + mmproj
 }
@@ -184,13 +185,13 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        {/* Full-width relay card — dimmed, teaser only */}
+        {/* Full-width cards */}
         {full.map((mod) => (
           <TouchableOpacity
             key={mod.id}
-            style={[styles.cardFull, { backgroundColor: theme.card, borderColor: theme.border, opacity: 0.45 }]}
+            style={[styles.cardFull, { backgroundColor: theme.card, borderColor: theme.border, opacity: mod.beta ? 0.45 : 1 }]}
             onPress={() => enterModule(mod)}
-            activeOpacity={0.9}
+            activeOpacity={0.75}
           >
             <View style={[styles.cardIcon, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
               {mod.icon(theme.text)}
@@ -200,9 +201,11 @@ export default function HomeScreen() {
               <Text style={[styles.cardTitle, { color: theme.text }]}>{mod.title}</Text>
               <Text style={[styles.cardDesc, { color: theme.textSecondary }]} numberOfLines={1}>{mod.desc}</Text>
             </View>
-            <View style={[styles.betaBadge, { borderColor: theme.accent + '44', backgroundColor: theme.accent + '18' }]}>
-              <Text style={[styles.betaText, { color: theme.accent }]}>Beta</Text>
-            </View>
+            {mod.beta && (
+              <View style={[styles.betaBadge, { borderColor: theme.accent + '44', backgroundColor: theme.accent + '18' }]}>
+                <Text style={[styles.betaText, { color: theme.accent }]}>Beta</Text>
+              </View>
+            )}
           </TouchableOpacity>
         ))}
 
