@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,11 @@ import {
 } from 'react-native';
 import { File, Directory } from 'expo-file-system';
 import { createDownloadResumable } from 'expo-file-system/legacy';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { AVAILABLE_MODELS, getHfDownloadUrl, MODEL_KEYS } from '../utils/models';
 import {
-  getDownloadedModels,
   saveDownloadedModel,
   removeDownloadedModel,
   getHfToken,
@@ -58,6 +57,8 @@ export default function ModelsScreen() {
     init();
   }, []);
 
+  useFocusEffect(useCallback(() => { void init(); }, []));
+
   const init = async () => {
     try {
       await initModelsDirectory();
@@ -76,7 +77,7 @@ export default function ModelsScreen() {
   };
 
   const loadDownloaded = async () => {
-    const models = await getDownloadedModels();
+    const models = await syncModelsFromDisk();
     setDownloadedModels(models);
   };
 

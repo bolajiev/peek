@@ -117,7 +117,8 @@ export async function syncModelsFromDisk(): Promise<DownloadedModel[]> {
   for (const model of AVAILABLE_MODELS) {
     const modelFolder = new Directory(modelsDir, model.id);
     const modelFile = new File(modelFolder, 'model.gguf');
-    if (!modelFile.exists) continue;
+    // Require at least 1 MB — filters out empty files and corrupt 404 HTML responses
+    if (!modelFile.exists || modelFile.size < 1_000_000) continue;
 
     const mmprojFile = new File(modelFolder, 'mmproj.gguf');
 
