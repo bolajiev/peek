@@ -263,11 +263,10 @@ export default function DeepScreen() {
 
       const gp = await getGenParams();
       let full = '';
-      let thinkingFull = '';
       const run = completion({
         modelId: llmModelId, history: msgs, stream: true,
-        captureThinking: true,
-        generationParams: { predict: Math.min(gp.maxTokens, 1024), temp: gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty, reasoning_budget: -1 as -1 },
+        captureThinking: false,
+        generationParams: { predict: Math.min(gp.maxTokens, 1024), temp: gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty, reasoning_budget: 0 as 0 },
       });
       currentRunRef.current = run;
       registerInferenceCancel(() => { if (currentRunRef.current) cancel({ requestId: currentRunRef.current.requestId }).catch(() => {}); });
@@ -278,21 +277,17 @@ export default function DeepScreen() {
           const { answer: visible } = splitStream(full);
           setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: visible || '' } : m));
           scrollRef.current?.scrollToEnd({ animated: false });
-        } else if ((ev as any).type === 'thinkingDelta') {
-          thinkingFull += (ev as any).text;
-          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, thinking: thinkingFull, inThink: true } : m));
         }
       }
       const [, stats] = await Promise.all([run.final, run.stats]);
       currentRunRef.current = null;
 
-      const { text: cleanFull, thinking: thinkFallback } = stripThink(full);
+      const { text: cleanFull } = stripThink(full);
       const finalText = cleanFull.trim() || 'No response.';
-      const finalThinking = thinkingFull || thinkFallback || undefined;
       const elapsed = Math.round((Date.now() - genStart) / 100) / 10;
       const tokens = stats?.generatedTokens;
-      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: finalText, thinking: finalThinking, inThink: false, streaming: false, elapsed, tokens } : m));
-      const aiCm: ChatMessage = { id: placeholderId, conversationId: convIdRef.current, role: 'assistant', content: finalText, thinking: finalThinking, createdAt: new Date().toISOString() };
+      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: finalText, inThink: false, streaming: false, elapsed, tokens } : m));
+      const aiCm: ChatMessage = { id: placeholderId, conversationId: convIdRef.current, role: 'assistant', content: finalText, createdAt: new Date().toISOString() };
       await appendMessage(aiCm);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e) {
@@ -401,14 +396,6 @@ export default function DeepScreen() {
           <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {messages.map((msg) => (
               <View key={msg.id} style={[styles.turn, msg.role === 'user' ? styles.turnRight : styles.turnLeft]}>
-                {msg.role === 'assistant' && msg.inThink && (
-                  <View style={[styles.thinkingLive, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
-                    <Text style={[styles.thinkingLiveLabel, { color: theme.accent }]}>Reasoning...</Text>
-                    {msg.thinking
-                      ? <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={5}>{msg.thinking}</Text>
-                      : <TypingDots color={theme.textSecondary} size={6} />}
-                  </View>
-                )}
                 <View style={[
                   styles.bubble,
                   msg.role === 'user'

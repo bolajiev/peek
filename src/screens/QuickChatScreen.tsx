@@ -6,6 +6,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
+import {
+  showRunningNotification, clearInferenceNotifications,
+  registerInferenceCancel, unregisterInferenceCancel,
+} from '../utils/bgNotification';
 import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
@@ -57,6 +61,8 @@ export default function QuickChatScreen() {
     return () => {
       showSub.remove();
       hideSub.remove();
+      unregisterInferenceCancel();
+      void clearInferenceNotifications();
       if (runRef.current) cancel({ requestId: runRef.current.requestId }).catch(() => {});
     };
   }, []);
@@ -77,7 +83,7 @@ export default function QuickChatScreen() {
       setModelName(model.name);
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
-      const modelConfig: any = { ctx_size: 2048, device };
+      const modelConfig: any = { ctx_size: 1024, device };
       if (model.projectionModelSrc) modelConfig.projectionModelSrc = toPath(model.projectionModelSrc);
       const mid = await llmManager.ensure(model, modelConfig, setLoadProgress);
       modelIdRef.current = mid;
@@ -109,8 +115,18 @@ export default function QuickChatScreen() {
         { role: 'system', content: SYSTEM_PROMPTS.quickchat },
         ...all.map(m => ({ role: m.role, content: m.text })),
       ];
-      const run = completion({ modelId: mid, history, stream: true });
+      const run = completion({
+        modelId: mid,
+        history,
+        stream: true,
+        captureThinking: false,
+        generationParams: { predict: 512, temp: 0.7, top_k: 20, reasoning_budget: 0 as 0 },
+      });
       runRef.current = run;
+      registerInferenceCancel(() => {
+        if (runRef.current) cancel({ requestId: runRef.current.requestId }).catch(() => {});
+      });
+      void showRunningNotification('Quick Chat');
       let out = '';
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') {
@@ -121,9 +137,13 @@ export default function QuickChatScreen() {
       }
       await run.final;
       runRef.current = null;
+      unregisterInferenceCancel();
+      void clearInferenceNotifications();
       setMessages(prev => prev.map(m => m.id === phId ? { ...m, streaming: false } : m));
     } catch (e) {
       runRef.current = null;
+      unregisterInferenceCancel();
+      void clearInferenceNotifications();
       if (!(e instanceof InferenceCancelledError)) {
         setMessages(prev => prev.map(m => m.id === phId ? { ...m, text: 'Something went wrong.', streaming: false } : m));
       }

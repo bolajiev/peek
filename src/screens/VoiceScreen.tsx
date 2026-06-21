@@ -20,7 +20,7 @@ import PeekLoader from '../components/PeekLoader';
 import ResultActions from '../components/ResultActions';
 import TypingDots from '../components/TypingDots';
 
-type Phase = 'idle' | 'recording' | 'transcribing' | 'transcript' | 'summarizing' | 'done';
+type Phase = 'idle' | 'recording' | 'transcribing' | 'transcript' | 'explaining' | 'done';
 
 // Number of waveform bars
 const BAR_COUNT = 7;
@@ -65,7 +65,7 @@ export default function VoiceScreen() {
     whisperManager.ensure().then(() => setWhisperReady(true)).catch(() => {});
     const sub = AppState.addEventListener('change', state => {
       const p = phaseRef.current;
-      if (state === 'background' && (p === 'recording' || p === 'transcribing' || p === 'summarizing')) {
+      if (state === 'background' && (p === 'recording' || p === 'transcribing' || p === 'explaining')) {
         showRunningNotification('Peek Voice');
       } else if (state === 'active') {
         clearInferenceNotifications();
@@ -80,7 +80,7 @@ export default function VoiceScreen() {
     };
   }, []);
 
-  // Auto-summarize when transcript phase is set and flag is armed
+  // Auto-explain when transcript phase is set and flag is armed
   useEffect(() => {
     if (phase === 'transcript' && autoSummarizeRef.current && transcriptRef.current) {
       autoSummarizeRef.current = false;
@@ -302,22 +302,25 @@ export default function VoiceScreen() {
   const handleSummarize = async () => {
     const currentTranscript = transcriptRef.current;
     if (!currentTranscript || currentTranscript === '(No speech detected)') return;
-    setPhase('summarizing');
+    setPhase('explaining');
     setSummary('');
     startPhaseTimer();
     try {
       const synced = await syncModelsFromDisk();
-      const textModel = synced.find(m => m.id === MODEL_KEYS.TEXT_HEALTH)
+      // SmolVLM2 500M can explain text without vision (load without mmproj).
+      // Prefer it because it's already downloaded by Lens users.
+      const explainModel = synced.find(m => m.id === MODEL_KEYS.VISION)
         ?? synced.find(m => m.id === MODEL_KEYS.TEXT_FAST)
         ?? synced.find(m => m.modelType === 'text');
-      if (!textModel) {
-        setSummary('No text model downloaded. Download a model to get AI summaries.');
+      if (!explainModel) {
+        setSummary('Download SmolVLM2 500M (via Lens) or Qwen3 1.7B to get explanations.');
         setPhase('done');
         return;
       }
       const settings = await getSettings();
+      // Do NOT include projectionModelSrc — text-only task, no image input needed
       const modelConfig: any = { ctx_size: 1024, device: settings.accelerator === 'gpu' ? 'gpu' : 'cpu' };
-      const mid = await llmManager.ensure(textModel, modelConfig);
+      const mid = await llmManager.ensure(explainModel, modelConfig);
       const gp = await getGenParams();
       let out = '';
       const run = completion({
@@ -328,7 +331,7 @@ export default function VoiceScreen() {
         ],
         stream: true,
         captureThinking: false,
-        generationParams: { predict: gp.maxTokens, temp: gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty },
+        generationParams: { predict: gp.maxTokens, temp: gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty, reasoning_budget: 0 as 0 },
       });
       currentRunRef.current = run;
       registerInferenceCancel(() => { if (currentRunRef.current) cancel({ requestId: currentRunRef.current.requestId }).catch(() => {}); });
@@ -381,7 +384,7 @@ export default function VoiceScreen() {
   const fmtTime = (s: number) =>
     `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
-  const isWorking = phase === 'recording' || phase === 'transcribing' || phase === 'summarizing';
+  const isWorking = phase === 'recording' || phase === 'transcribing' || phase === 'explaining';
 
   return (
     <Animated.View style={[styles.root, { backgroundColor: theme.background, opacity: fadeAnim }]}>
@@ -410,7 +413,7 @@ export default function VoiceScreen() {
             </View>
             <Text style={[styles.heroTitle, { color: theme.text }]}>Peek Voice</Text>
             <Text style={[styles.heroSub, { color: theme.textSecondary }]}>
-              Record or upload audio — get a transcript and summary automatically.
+              Record or upload audio — get a transcript and explanation automatically.
             </Text>
             {initError && <Text style={[styles.errText, { color: theme.error }]}>{initError}</Text>}
           </View>
@@ -515,8 +518,8 @@ export default function VoiceScreen() {
         </View>
       )}
 
-      {/* ── Result — transcript + summary (visible during summarizing too) ── */}
-      {(phase === 'transcript' || phase === 'summarizing' || phase === 'done') && (
+      {/* ── Result — transcript + explanation ── */}
+      {(phase === 'transcript' || phase === 'explaining' || phase === 'done') && (
         <ScrollView
           style={styles.resultScroll}
           contentContainerStyle={styles.resultContent}
@@ -538,10 +541,10 @@ export default function VoiceScreen() {
             theme={theme}
           />
 
-          {/* Summary section */}
+          {/* Explanation section */}
           <View style={[styles.sectionRow, { marginTop: 24 }]}>
-            <Text style={[styles.sectionHead, { color: theme.textSecondary }]}>SUMMARY</Text>
-            {phase === 'summarizing' && (
+            <Text style={[styles.sectionHead, { color: theme.textSecondary }]}>EXPLANATION</Text>
+            {phase === 'explaining' && (
               <Text style={[styles.wordCount, { color: theme.accent }]}>{fmtTime(phaseElapsed)}</Text>
             )}
             {phase === 'done' && !summary && (
@@ -556,18 +559,18 @@ export default function VoiceScreen() {
               </View>
               <ResultActions
                 text={summary}
-                title={`peek-summary-${Date.now()}`}
+                title={`peek-explanation-${Date.now()}`}
                 theme={theme}
               />
             </>
           ) : phase === 'done' && !summary ? (
             <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
               <Text style={[styles.resultText, { color: theme.textSecondary }]}>
-                Download a text model to enable AI summaries.
+                Download SmolVLM2 500M (via Peek Lens) or Qwen3 1.7B to get explanations.
               </Text>
             </View>
-          ) : phase === 'summarizing' ? (
-            // Streaming summary — tokens arrive live
+          ) : phase === 'explaining' ? (
+            // Streaming explanation — tokens arrive live
             <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
               {summary ? (
                 <Text style={[styles.resultText, { color: theme.text }]}>{summary}</Text>

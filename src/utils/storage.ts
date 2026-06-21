@@ -25,10 +25,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   responseLength: 'balanced',
   huggingFaceToken: '',
   temperature: 0.7,
-  topK: 40,
-  topP: 0.95,
+  topK: 20,
+  topP: 0.9,
   repeatPenalty: 1.1,
-  maxTokens: 2048,
+  maxTokens: 1024,
 };
 
 // App-private document storage — no runtime permission required on any platform.

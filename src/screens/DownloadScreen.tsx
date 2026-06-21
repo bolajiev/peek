@@ -6,6 +6,11 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { File, Directory } from 'expo-file-system';
 import { createDownloadResumable } from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  registerDownloadCancel, unregisterDownloadCancel,
+  showDownloadProgressNotification, showDownloadDoneNotification,
+  clearDownloadNotification, requestNotificationPermission,
+} from '../utils/bgNotification';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import {
@@ -58,10 +63,14 @@ export default function DownloadScreen() {
   const lastTimeRef = useRef(Date.now());
 
   useEffect(() => {
+    void requestNotificationPermission();
+    registerDownloadCancel(handleCancel);
     Animated.timing(fadeAnim, { toValue: 1, duration: 320, useNativeDriver: true }).start();
     runDownload();
     return () => {
       mountedRef.current = false;
+      unregisterDownloadCancel();
+      void clearDownloadNotification();
       // Android back gesture — pause and save resume state without blocking unmount
       if (dlRef.current && currentResumeKeyRef.current && !cancelledRef.current) {
         cancelledRef.current = true;
@@ -96,6 +105,7 @@ export default function DownloadScreen() {
       }
 
       await syncModelsFromDisk();
+      void showDownloadDoneNotification(m.name);
       setPhase('done');
       setTimeout(() => {
         if (!cancelledRef.current) {
@@ -103,6 +113,7 @@ export default function DownloadScreen() {
         }
       }, 600);
     } catch (err: any) {
+      void clearDownloadNotification();
       if (cancelledRef.current) return;
       const msg = (err?.message || 'Download failed').replace(/file:\/\/[^\s,]*/g, '[path]');
       setErrorMsg(`Couldn't download ${m.name}. ${msg}`);
@@ -147,15 +158,20 @@ export default function DownloadScreen() {
     lastBytesRef.current = 0;
     lastTimeRef.current = Date.now();
 
+    // Show notification immediately so it's visible before any progress callback fires
+    void showDownloadProgressNotification(m.name, labelText, startPct, 0, m.sizeBytes ?? 0, 0, true);
+
     const dl = createDownloadResumable(url, destUri, { headers }, (p) => {
       if (cancelledRef.current || !mountedRef.current) return;
 
       // Speed calculation — update every 0.5s
       const now = Date.now();
       const dt = (now - lastTimeRef.current) / 1000;
+      let currentSpeed = speedBps;
       if (dt >= 0.5) {
         const delta = p.totalBytesWritten - lastBytesRef.current;
-        setSpeedBps(Math.round(delta / dt));
+        currentSpeed = Math.round(delta / dt);
+        setSpeedBps(currentSpeed);
         lastBytesRef.current = p.totalBytesWritten;
         lastTimeRef.current = now;
       }
@@ -166,7 +182,9 @@ export default function DownloadScreen() {
       const overallPct = Math.round(startPct + filePct * (endPct - startPct));
       setPct(overallPct);
       setBytesWritten(p.totalBytesWritten);
-      setBytesTotal(p.totalBytesExpectedToWrite > 0 ? p.totalBytesExpectedToWrite : (m.sizeBytes ?? 0));
+      const total = p.totalBytesExpectedToWrite > 0 ? p.totalBytesExpectedToWrite : (m.sizeBytes ?? 0);
+      setBytesTotal(total);
+      void showDownloadProgressNotification(m.name, labelText, overallPct, p.totalBytesWritten, total, currentSpeed);
     }, resumeData);
 
     dlRef.current = dl;
@@ -191,7 +209,8 @@ export default function DownloadScreen() {
         await AsyncStorage.setItem(currentResumeKeyRef.current, JSON.stringify(pauseState));
       } catch {}
     }
-    navigation.goBack();
+    // Guard: notification may trigger this after screen unmounts
+    if (mountedRef.current) navigation.goBack();
   };
 
   const handleRetry = () => {

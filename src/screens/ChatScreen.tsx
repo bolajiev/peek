@@ -172,7 +172,7 @@ export default function ChatScreen() {
       setActiveStorageModelId(model.id);
       const settings = await getSettings();
       const device = settings.accelerator === 'gpu' ? 'gpu' : 'cpu';
-      const modelConfig: any = { ctx_size: 4096, device };
+      const modelConfig: any = { ctx_size: 2048, device };
       if (model.projectionModelSrc) modelConfig.projectionModelSrc = toPath(model.projectionModelSrc);
       const mid = await llmManager.ensure(model, modelConfig, setLoadProgress);
       modelIdRef.current = mid;

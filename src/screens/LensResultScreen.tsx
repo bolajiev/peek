@@ -6,6 +6,10 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
+import {
+  showRunningNotification, clearInferenceNotifications,
+  registerInferenceCancel, unregisterInferenceCancel,
+} from '../utils/bgNotification';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { getSettings, toPath, saveLensScan, updateScanStreak } from '../utils/storage';
@@ -42,6 +46,8 @@ export default function LensResultScreen() {
     ]).start();
     runAnalysis();
     return () => {
+      unregisterInferenceCancel();
+      void clearInferenceNotifications();
       if (runRef.current) cancel({ requestId: runRef.current.requestId }).catch(() => {});
       void llmManager.release().catch(() => {});
     };
@@ -69,6 +75,11 @@ export default function LensResultScreen() {
       setPhase('streaming');
       setStatusText('Analyzing…');
 
+      registerInferenceCancel(() => {
+        if (runRef.current) cancel({ requestId: runRef.current.requestId }).catch(() => {});
+      });
+      void showRunningNotification('Peek Lens');
+
       const genStart = Date.now();
       const imagePath = toPath(photoUri);
       const run = completion({
@@ -78,7 +89,8 @@ export default function LensResultScreen() {
           { role: 'user', content: userQuery || 'What is this? Describe what you see.', attachments: [{ path: imagePath }] },
         ],
         stream: true,
-        generationParams: { predict: 300, temp: 0.3, top_k: 20 },
+        captureThinking: false,
+        generationParams: { predict: 300, temp: 0.3, top_k: 20, reasoning_budget: 0 as 0 },
       });
       runRef.current = run;
 
@@ -100,6 +112,8 @@ export default function LensResultScreen() {
       setElapsed(Math.round((Date.now() - genStart) / 1000));
       if (stats?.generatedTokens) setTokenCount(stats.generatedTokens);
 
+      unregisterInferenceCancel();
+      void clearInferenceNotifications();
       setPhase('done');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -116,6 +130,8 @@ export default function LensResultScreen() {
         });
       } catch {}
     } catch (err) {
+      unregisterInferenceCancel();
+      void clearInferenceNotifications();
       if (!(err instanceof InferenceCancelledError)) {
         setPhase('error');
         setStatusText('Analysis failed. Try again.');

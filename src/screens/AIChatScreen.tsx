@@ -109,7 +109,7 @@ export default function AIChatScreen() {
         setActiveStorageModelId(target.id);
 
         const settings = await getSettings();
-        const cfg: any = { ctx_size: 4096, device: settings.accelerator === 'gpu' ? 'gpu' : 'cpu' };
+        const cfg: any = { ctx_size: 2048, device: settings.accelerator === 'gpu' ? 'gpu' : 'cpu' };
         const mid = await llmManager.ensure(target, cfg, p => setLoadProgress(p));
         modelIdRef.current = mid;
         setModelName(target.name);
@@ -293,7 +293,7 @@ export default function AIChatScreen() {
     setModelLoading(true);
     try {
       const settings = await getSettings();
-      const cfg: any = { ctx_size: 4096, device: settings.accelerator === 'gpu' ? 'gpu' : 'cpu' };
+      const cfg: any = { ctx_size: 2048, device: settings.accelerator === 'gpu' ? 'gpu' : 'cpu' };
       const mid = await llmManager.ensure(model, cfg, p => setLoadProgress(p));
       modelIdRef.current = mid;
       setModelName(model.name);

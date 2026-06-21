@@ -17,6 +17,7 @@ export interface ModelInfo {
   isDownloaded?: boolean;
   downloadedPath?: string;
   isCustom?: boolean;
+  heavy?: boolean;
 }
 
 export interface Conversation {

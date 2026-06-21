@@ -321,6 +321,11 @@ export default function ModelsScreen() {
               <Text style={[styles.chipText, { color: theme.textSecondary }]}>Text Only</Text>
             </View>
           )}
+          {model.heavy && (
+            <View style={[styles.chip, { borderColor: '#e07000aa', backgroundColor: '#e0700012' }]}>
+              <Text style={[styles.chipText, { color: '#e07000' }]}>Needs 3 GB+ RAM</Text>
+            </View>
+          )}
         </View>
 
         {isDownloading && renderProgress(model.id)}

@@ -3,22 +3,25 @@ import {
   SMOLVLM2_500M_MULTIMODAL_Q8_0,
   MMPROJ_SMOLVLM2_500M_MULTIMODAL_Q8_0,
   GEMMA4_2B_MULTIMODAL_Q4_K_M,
+  QWEN3VL_2B_MULTIMODAL_Q4_K,
+  MMPROJ_QWEN3VL_2B_MULTIMODAL_Q4_K,
 } from '@qvac/sdk';
 
 const MEDPSY_4B_SRC = 'registry://hf/qvac/MedPsy-4B-GGUF/resolve/main/medpsy-4b-q4_k_m-imat.gguf';
+const MEDPSY_1_7B_SRC = 'registry://hf/qvac/MedPsy-1.7B-GGUF/resolve/main/medpsy-1.7b-q4_k_m-imat.gguf';
 import { ModelInfo } from '../types';
 
 export const MODEL_KEYS = {
   TEXT_FAST: 'text-fast',
   TEXT_HEALTH: 'text-health',
+  TEXT_HEALTH_LITE: 'text-health-lite',
   TEXT_CODE: 'text-code',
   VISION: 'vision',
+  VISION_2B: 'vision-2b',
 } as const;
 
 export type ModelKey = (typeof MODEL_KEYS)[keyof typeof MODEL_KEYS];
 
-// Exactly three models — no model zoo.
-// TEXT_FAST is the silent startup default (small, always available first).
 export const AVAILABLE_MODELS: ModelInfo[] = [
   {
     id: MODEL_KEYS.TEXT_FAST,
@@ -26,10 +29,21 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     modelType: 'text',
     tagline: 'Fast general text model.',
     description: 'Qwen3 1.7B runs fully on-device. Fast responses, low RAM usage. Best for Scribe and Chat.',
-    size: '1.1GB',
+    size: '1.1 GB',
     sizeBytes: 1_056_782_912,
     modelSrc: QWEN3_1_7B_INST_Q4.src,
     supports: ['text'],
+  },
+  {
+    id: MODEL_KEYS.TEXT_HEALTH_LITE,
+    name: 'MedPsy 1.7B',
+    modelType: 'text',
+    tagline: 'Medical & mental health — lighter.',
+    description: 'MedPsy 1.7B by QVAC. Lighter medical and healthcare model for devices with less RAM. Knowledgeable on health, symptoms, and wellness — fully on-device.',
+    size: '1.1 GB',
+    sizeBytes: 1_056_000_000,
+    modelSrc: MEDPSY_1_7B_SRC,
+    supports: ['text', 'health'],
   },
   {
     id: MODEL_KEYS.TEXT_HEALTH,
@@ -37,21 +51,23 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     modelType: 'text',
     tagline: 'Medical & mental health specialist.',
     description: 'MedPsy 4B by QVAC. State-of-the-art medical and healthcare model built for edge devices. Knowledgeable on health, symptoms, and wellness — fully on-device.',
-    size: '2.7GB',
+    size: '2.7 GB',
     sizeBytes: 2_720_000_000,
     modelSrc: MEDPSY_4B_SRC,
     supports: ['text', 'health'],
+    heavy: true,
   },
   {
     id: MODEL_KEYS.TEXT_CODE,
     name: 'Gemma 4 2B',
     modelType: 'text',
     tagline: 'Better HTML, code, and games.',
-    description: 'Gemma 4 E2B by Google. Stronger at writing games, interactive HTML, and code. Optional download (~2.7GB).',
-    size: '2.7GB',
+    description: 'Gemma 4 2B by Google. Stronger at writing games, interactive HTML, and code. Requires 3 GB+ free RAM.',
+    size: '2.7 GB',
     sizeBytes: 2_700_000_000,
     modelSrc: GEMMA4_2B_MULTIMODAL_Q4_K_M.src,
     supports: ['text'],
+    heavy: true,
   },
   {
     id: MODEL_KEYS.VISION,
@@ -59,10 +75,22 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     modelType: 'vision',
     tagline: 'On-device image understanding.',
     description: 'SmolVLM2 500M analyzes photos, food labels, text in images, and more — fully offline via Peek Lens.',
-    size: '521MB',
+    size: '521 MB',
     sizeBytes: 436_808_704 + 108_785_184,
     modelSrc: SMOLVLM2_500M_MULTIMODAL_Q8_0.src,
     projectionModelSrc: MMPROJ_SMOLVLM2_500M_MULTIMODAL_Q8_0.src,
+    supports: ['vision'],
+  },
+  {
+    id: MODEL_KEYS.VISION_2B,
+    name: 'Qwen3-VL 2B',
+    modelType: 'vision',
+    tagline: 'Sharper vision, larger context.',
+    description: 'Qwen3-VL 2B by Alibaba. More capable vision model — better at reading documents, detailed scenes, and complex visual questions. Requires ~2 GB free RAM.',
+    size: '1.7 GB',
+    sizeBytes: 1_400_000_000 + 290_000_000,
+    modelSrc: QWEN3VL_2B_MULTIMODAL_Q4_K.src,
+    projectionModelSrc: MMPROJ_QWEN3VL_2B_MULTIMODAL_Q4_K.src,
     supports: ['vision'],
   },
 ];
@@ -184,7 +212,7 @@ Answer questions using ONLY the provided document context. If the answer is not 
 
   voice: `You are Peek Voice, a private on-device audio assistant. The user has provided a transcript of audio that was recorded or uploaded. Always respond in English.
 
-Summarize the key ideas from the transcript clearly and directly in 3–5 sentences. Write as flowing prose — no bullet points, no reasoning steps, no <think> tags.`,
+Explain what is being said in the transcript clearly and in your own words. Cover the main points and any important details in 3–6 sentences of flowing prose. Write naturally — no bullet points, no reasoning steps, no <think> tags.`,
 
   lens: `You are Peek Lens, a private on-device vision assistant. Always respond in English. Analyze the image and answer the user's question clearly and accurately. Do not use <think> tags or show reasoning.`,
 
