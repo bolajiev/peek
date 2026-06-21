@@ -8,7 +8,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { File, Directory, Paths } from 'expo-file-system';
-import * as FileSystem from 'expo-file-system';
 import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
@@ -355,12 +354,12 @@ export default function ChatScreen() {
   const saveArtifact = async (type: 'md' | 'html', source: string): Promise<GeneratedFile | undefined> => {
     try {
       const artifactsDir = new Directory(Paths.document, 'artifacts');
-      await artifactsDir.create({ intermediates: true, idempotent: true });
+      artifactsDir.create({ intermediates: true, idempotent: true });
       const ts = Date.now();
       const ext = type === 'md' ? 'md' : 'html';
       const fileName = `peek-scribe-${ts}.${ext}`;
       const file = new File(artifactsDir, fileName);
-      await FileSystem.writeAsStringAsync(file.uri, source, { encoding: 'utf8' });
+      file.write(source);
       return { name: fileName, fileUri: file.uri, artifactType: type };
     } catch {
       return undefined;
@@ -370,7 +369,7 @@ export default function ChatScreen() {
   const shareArtifact = async (file: GeneratedFile) => {
     if (file.artifactType === 'md') {
       try {
-        const content = await FileSystem.readAsStringAsync(file.fileUri);
+        const content = await new File(file.fileUri).text();
         setMdPanelSource(content);
       } catch {
         setMdPanelSource('');
@@ -381,7 +380,7 @@ export default function ChatScreen() {
     }
     // HTML → open in in-app WebView panel
     try {
-      const html = await FileSystem.readAsStringAsync(file.fileUri);
+      const html = await new File(file.fileUri).text();
       setHtmlPanelHtml(html);
       setHtmlPanelFile(file);
       setHtmlPanelVisible(true);
