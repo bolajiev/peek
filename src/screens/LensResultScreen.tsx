@@ -29,6 +29,8 @@ export default function LensResultScreen() {
   const [statusText, setStatusText] = useState('Loading model…');
   const [answer, setAnswer] = useState('');
   const [modelName, setModelName] = useState('');
+  const [elapsed, setElapsed] = useState<number | undefined>(undefined);
+  const [tokenCount, setTokenCount] = useState<number | undefined>(undefined);
   const runRef = useRef<any>(null);
   const slideY = useRef(new Animated.Value(40)).current;
   const fade = useRef(new Animated.Value(0)).current;
@@ -67,6 +69,7 @@ export default function LensResultScreen() {
       setPhase('streaming');
       setStatusText('Analyzing…');
 
+      const genStart = Date.now();
       const imagePath = toPath(photoUri);
       const run = completion({
         modelId: mid,
@@ -92,6 +95,11 @@ export default function LensResultScreen() {
       const { answer: finalAnswer } = splitStream(streamed);
       const text = finalAnswer.trim() || 'No response.';
       setAnswer(text);
+
+      const [, stats] = await Promise.all([run.final, run.stats]);
+      setElapsed(Math.round((Date.now() - genStart) / 1000));
+      if (stats?.generatedTokens) setTokenCount(stats.generatedTokens);
+
       setPhase('done');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -180,6 +188,12 @@ export default function LensResultScreen() {
           <Text style={[styles.modelLabel, { color: theme.textSecondary }]}>{modelName}</Text>
         ) : null}
 
+        {(elapsed !== undefined || tokenCount !== undefined) && (
+          <Text style={[styles.statLine, { color: theme.textSecondary }]}>
+            {[elapsed !== undefined ? `${elapsed}s` : null, tokenCount !== undefined ? `${tokenCount} tokens` : null].filter(Boolean).join(' · ')}
+          </Text>
+        )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </Animated.View>
@@ -207,4 +221,5 @@ const styles = StyleSheet.create({
   retryBtn: { borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20, alignSelf: 'flex-start' },
   retryBtnText: { fontSize: 14, fontWeight: '700' },
   modelLabel: { fontSize: 11, textAlign: 'center', marginTop: 4 },
+  statLine: { fontSize: 11, textAlign: 'center', fontVariant: ['tabular-nums'] },
 });

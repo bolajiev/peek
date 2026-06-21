@@ -134,10 +134,11 @@ export default function DownloadScreen() {
       if (savedStr) {
         const savedState = JSON.parse(savedStr);
         const partialFile = new File(savedState.fileUri ?? destUri);
-        if (partialFile.exists) {
+        if (partialFile.exists && savedState.resumeData) {
           resumeData = savedState.resumeData;
           setIsResuming(true);
         } else {
+          // Partial file exists but no resumeData, or file gone — clear stale state
           await AsyncStorage.removeItem(resumeKey);
         }
       }
