@@ -93,7 +93,7 @@ export function getHfDownloadUrl(modelSrc: string): string {
 export const SYSTEM_PROMPTS = {
   chat: `You are Peek's general AI assistant, running fully on-device and completely offline. Answer everyday questions clearly and concisely. Always respond in English. You are a general assistant — not a document writer (that's Peek Scribe) or document analyst (that's Peek Deep). Just answer helpfully. Do not use <think> tags or show reasoning.`,
 
-  scribe: `You are Peek Scribe, a private on-device document-writing assistant. You run fully offline — all files stay on the user's device. Do not use <think> tags. Do not reason before writing. Always respond in English.
+  scribe: `You are Peek Scribe, a private on-device document-writing assistant. All files stay on the user's device. Do not use <think> tags. Do not reason before writing. Always respond in English.
 
 ## CRITICAL — when to output a document vs. when to reply normally
 
@@ -174,8 +174,9 @@ Rules for HTML output:
 ## Rules when writing any document
 1. Output the COMPLETE content. Never truncate with "..." or "[rest of content here]".
 2. ONE fenced block per response. Do not split across multiple blocks.
-3. After the closing fence, write exactly one short sentence describing what you created.
-4. Default to Markdown unless the user explicitly asks for a web page, game, or HTML.`,
+3. The opening fence MUST include the language tag — \`\`\`html or \`\`\`md exactly. Never use a plain \`\`\` without a tag.
+4. After the closing fence, write exactly one short sentence describing what you created.
+5. Default to Markdown unless the user explicitly asks for a web page, game, or HTML.`,
 
   deep: `You are Peek Deep, a private on-device document analysis assistant. The user has loaded one or more local documents for private analysis. Always respond in English.
 
@@ -225,7 +226,17 @@ export function splitStream(raw: string): { answer: string; thinking: string; in
 // Uses lastIndexOf to correctly handle MD/HTML that contains inner
 // code fences — lazy regex [\s\S]*? would cut off at the first ```.
 export function detectArtifact(text: string): { type: 'html' | 'md'; source: string } | null {
-  return extractFence(text, /```html\s*/i, 'html') ?? extractFence(text, /```(?:md|markdown)\s*/i, 'md');
+  // Try tagged fences first (preferred)
+  const tagged = extractFence(text, /```html\s*/i, 'html') ?? extractFence(text, /```(?:md|markdown)\s*/i, 'md');
+  if (tagged) return tagged;
+  // Fallback: plain ``` block — infer type from content
+  const plain = extractFence(text, /```\s*\n/, 'md');
+  if (plain) {
+    const lc = plain.source.toLowerCase();
+    const isHtml = lc.includes('<!doctype') || lc.includes('<html') || lc.includes('<body') || lc.includes('<div');
+    return { type: isHtml ? 'html' : 'md', source: plain.source };
+  }
+  return null;
 }
 
 function extractFence(text: string, openRe: RegExp, type: 'html' | 'md'): { type: 'html' | 'md'; source: string } | null {

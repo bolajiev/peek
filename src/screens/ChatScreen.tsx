@@ -297,7 +297,7 @@ export default function ChatScreen() {
       let generatedFile: GeneratedFile | undefined;
       // Strip artifact block from bubble text — shown via file card / MD panel instead
       const bubbleText = artifact
-        ? displayText.replace(/```(?:html|md|markdown)[\s\S]*```/i, '').trim()
+        ? displayText.replace(/```(?:html|md|markdown)?\s*[\s\S]*```/i, '').trim()
         : displayText;
       if (artifact) {
         generatedFile = await saveArtifact(artifact.type, artifact.source);
