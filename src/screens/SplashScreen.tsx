@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
-import { initModelsDirectory, syncModelsFromDisk, hasOnboarded } from '../utils/storage';
+import { initModelsDirectory, syncModelsFromDisk, shouldShowWelcome } from '../utils/storage';
 import { requestNotificationPermission } from '../utils/bgNotification';
 
 export default function SplashScreen() {
@@ -18,8 +18,8 @@ export default function SplashScreen() {
       await initModelsDirectory();
       await syncModelsFromDisk();
       requestNotificationPermission().catch(() => {});
-      const onboarded = await hasOnboarded();
-      navigation.replace(onboarded ? 'Main' : 'Onboarding');
+      const showWelcome = await shouldShowWelcome();
+      navigation.replace(showWelcome ? 'Onboarding' : 'Main');
     } catch (e: any) {
       console.error('[boot] init failed:', e);
       setBootError(e?.message || 'Startup error. Tap Retry to try again.');

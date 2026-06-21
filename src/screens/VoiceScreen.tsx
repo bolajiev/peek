@@ -360,13 +360,13 @@ export default function VoiceScreen() {
     startPhaseTimer();
     try {
       const synced = await syncModelsFromDisk();
-      // SmolVLM2 500M can explain text without vision (load without mmproj).
-      // Prefer it because it's already downloaded by Lens users.
-      const explainModel = synced.find(m => m.id === MODEL_KEYS.VISION)
+      // Default explanation model: MedPsy 1.7B. Falls back to other text models if not downloaded.
+      const explainModel = synced.find(m => m.id === MODEL_KEYS.TEXT_HEALTH_LITE)
+        ?? synced.find(m => m.id === MODEL_KEYS.TEXT_HEALTH)
         ?? synced.find(m => m.id === MODEL_KEYS.TEXT_FAST)
         ?? synced.find(m => m.modelType === 'text');
       if (!explainModel) {
-        setSummary('Download SmolVLM2 500M (via Lens) or Qwen3 1.7B to get explanations.');
+        setSummary('Download MedPsy 1.7B from the Models screen to enable explanations.');
         setPhase('done');
         return;
       }

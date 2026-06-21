@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Paths, File, Directory } from 'expo-file-system';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { HistoryItem, InferenceLog, AppSettings, ThemeMode, Accelerator, ResponseLength, DownloadedModel, Conversation, ChatMessage, ModuleId } from '../types';
 import { AVAILABLE_MODELS } from './models';
 
@@ -326,11 +327,25 @@ export async function hasOnboarded(): Promise<boolean> {
 }
 
 export async function markOnboarded(): Promise<void> {
+  const version = Constants.expoConfig?.version ?? '1.0.0';
   await AsyncStorage.setItem('@peek_onboarded', 'true');
+  await AsyncStorage.setItem('@peek_seen_version', version);
+}
+
+export async function shouldShowWelcome(): Promise<boolean> {
+  try {
+    const onboarded = await AsyncStorage.getItem('@peek_onboarded');
+    if (onboarded !== 'true') return true;
+    const seenVersion = await AsyncStorage.getItem('@peek_seen_version');
+    const current = Constants.expoConfig?.version ?? '1.0.0';
+    return seenVersion !== current;
+  } catch { return false; }
 }
 
 export async function getDefaultModelId(): Promise<string | null> {
-  return AsyncStorage.getItem('@peek_default_model');
+  const stored = await AsyncStorage.getItem('@peek_default_model');
+  // Default to MedPsy 4B if user has never chosen
+  return stored;
 }
 
 export async function setDefaultModelId(modelId: string): Promise<void> {

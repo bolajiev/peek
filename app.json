@@ -2,7 +2,7 @@
   "expo": {
     "name": "Peek",
     "slug": "peek",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./peeklogo.png",
     "userInterfaceStyle": "automatic",
@@ -29,9 +29,7 @@
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
+        "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
       ]
     },
     "web": {
@@ -64,8 +62,7 @@
           "color": "#F5C518",
           "defaultChannel": "peek-inference"
         }
-      ],
-      "expo-web-browser"
+      ]
     ],
     "extra": {
       "eas": {

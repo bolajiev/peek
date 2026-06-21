@@ -31,6 +31,7 @@ import Sidebar from '../components/Sidebar';
 import AIChatScreen from '../screens/AIChatScreen';
 import AIChatHubScreen from '../screens/AIChatHubScreen';
 import NearbyScreen from '../screens/NearbyScreen';
+import PeelFunScreen from '../screens/PeelFunScreen';
 
 const Stack = createNativeStackNavigator();
 const { width: SW } = Dimensions.get('window');
@@ -151,6 +152,7 @@ export default function AppNavigator() {
           <Stack.Screen name="About" component={AboutScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="AIChatHub" component={AIChatHubScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="AIChat" component={AIChatScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="PeelFun" component={PeelFunScreen} options={{ animation: 'slide_from_right' }} />
         </Stack.Navigator>
       </NavigationContainer>
     </ThemeContext.Provider>

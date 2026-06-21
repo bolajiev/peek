@@ -3,9 +3,10 @@ import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, Animated, Keyboard, AppState, Alert,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { completion, cancel, InferenceCancelledError } from '@qvac/sdk';
+import { completion, cancel, InferenceCancelledError, type Tool } from '@qvac/sdk';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
@@ -38,10 +39,33 @@ interface Message {
   showThinking?: boolean;
   elapsed?: number;
   tokens?: number;
+  mapHtml?: string;
+  mapLocation?: string;
 }
 
 const SYSTEM_PROMPT = SYSTEM_PROMPTS.chat;
 const MODULE_ID = 'aichat';
+
+function mapsIframeHtml(location: string): string {
+  const src = `https://maps.google.com/maps?q=${encodeURIComponent(location)}&output=embed`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{margin:0;padding:0}html,body,iframe{width:100%;height:100%;border:none;display:block}</style></head><body><iframe src="${src}" allowfullscreen></iframe></body></html>`;
+}
+
+const SHOW_MAP_TOOL: Tool = {
+  type: 'function',
+  name: 'show_map',
+  description: 'Show an interactive map for a given location. Call this whenever the user asks to see a place, location, or map.',
+  parameters: {
+    type: 'object',
+    properties: {
+      location: {
+        type: 'string',
+        description: 'The place name or address to show on the map, e.g. "Eiffel Tower, Paris" or "Times Square, New York"',
+      },
+    },
+    required: ['location'],
+  },
+};
 
 export default function AIChatScreen() {
   const navigation = useNavigation<any>();
@@ -51,6 +75,7 @@ export default function AIChatScreen() {
   const seedMessage: string | undefined = route.params?.seedMessage;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
+
   const insets = useSafeAreaInsets();
   const inputPadBot = useRef(new Animated.Value(0)).current;
   const insetBottomRef = useRef(0);
@@ -214,6 +239,7 @@ export default function AIChatScreen() {
       const run = completion({
         modelId: mid,
         history: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
+        tools: [SHOW_MAP_TOOL],
         stream: true,
         captureThinking: false,
         generationParams: {
@@ -230,6 +256,8 @@ export default function AIChatScreen() {
       showRunningNotification('AI Chat');
       let streamed = '';
       let firstTokenMs = -1;
+      let mapLocation: string | undefined;
+      let mapHtml: string | undefined;
       for await (const event of run.events) {
         if (event.type === 'contentDelta') {
           if (firstTokenMs < 0) firstTokenMs = Date.now();
@@ -239,6 +267,17 @@ export default function AIChatScreen() {
             ? { ...m, text: visible, inThink: false }
             : m));
           scrollRef.current?.scrollToEnd({ animated: false });
+        } else if (event.type === 'toolCall' && event.call.name === 'show_map') {
+          // Tool call: show_map — render map inline immediately
+          const loc = String((event.call.arguments as any).location ?? '').trim();
+          if (loc) {
+            mapLocation = loc;
+            mapHtml = mapsIframeHtml(loc);
+            setMessages(prev => prev.map(m => m.id === placeholderId
+              ? { ...m, mapHtml, mapLocation, text: m.text || '' }
+              : m));
+            scrollRef.current?.scrollToEnd({ animated: false });
+          }
         }
       }
       const [, stats] = await Promise.all([run.final, run.stats]);
@@ -250,8 +289,9 @@ export default function AIChatScreen() {
       const elapsed = Math.round(totalMs / 100) / 10;
       const tokens = stats?.generatedTokens;
       logInference('AIChat', modelName, ttftMs, totalMs, tokens ?? 0).catch(() => {});
+
       setMessages(prev => prev.map(m => m.id === placeholderId
-        ? { ...m, text: displayText, streaming: false, thinking: undefined, elapsed, tokens }
+        ? { ...m, text: displayText, streaming: false, thinking: undefined, elapsed, tokens, mapHtml, mapLocation }
         : m));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const aiMsg: Message = { id: placeholderId, role: 'assistant', text: displayText };
@@ -478,6 +518,22 @@ function MessageBubble({ msg, theme, onToggleThinking, showThinkToggle }: {
             ) : null}
           </View>
 
+          {/* Inline map card */}
+          {!msg.streaming && msg.mapHtml ? (
+            <View style={styles.mapCard}>
+              <WebView
+                source={{ html: msg.mapHtml }}
+                style={styles.mapWebView}
+                javaScriptEnabled
+                domStorageEnabled
+                originWhitelist={['*']}
+              />
+              {msg.mapLocation ? (
+                <Text style={[styles.mapLabel, { color: theme.textSecondary }]}>{msg.mapLocation}</Text>
+              ) : null}
+            </View>
+          ) : null}
+
           {/* Thinking toggle — only in Deep mode */}
           {!msg.streaming && msg.thinking && showThinkToggle ? (
             <>
@@ -557,6 +613,9 @@ const styles = StyleSheet.create({
   thinkingToggleText: { fontSize: 12, fontWeight: '600' },
   thinkingBox: { padding: 10, borderRadius: 10, borderWidth: 1 },
   thinkingText: { fontSize: 12, lineHeight: 18, fontStyle: 'italic' },
+  mapCard: { marginTop: 8, borderRadius: 12, overflow: 'hidden', height: 200 },
+  mapWebView: { width: '100%', height: 180 },
+  mapLabel: { fontSize: 11, paddingHorizontal: 8, paddingVertical: 4 },
   bubbleActions: { flexDirection: 'row', gap: 8, marginTop: 2 },
   statLine: { fontSize: 11, marginTop: 4, fontVariant: ['tabular-nums'] },
   inputWrap: { paddingHorizontal: 12, paddingTop: 8 },

@@ -7,7 +7,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme, useSidebar } from '../navigation/AppNavigator';
 import {
-  IconLens, IconVoice, IconScribe, IconDeep, IconChat, IconMenu, IconNearby,
+  IconLens, IconVoice, IconScribe, IconDeep, IconChat, IconMenu, IconNearby, IconGame,
 } from '../components/Icons';
 import { syncModelsFromDisk } from '../utils/storage';
 import { MODEL_KEYS } from '../utils/models';
@@ -18,7 +18,7 @@ const H_PAD = 12;
 const CARD_GAP = 10;
 const CARD_W = (SW - H_PAD * 2 - CARD_GAP) / 2;
 
-type ModuleKey = 'Lens' | 'Voice' | 'Scribe' | 'Deep' | 'Chat' | 'Nearby';
+type ModuleKey = 'Lens' | 'Voice' | 'Scribe' | 'Deep' | 'Chat' | 'Nearby' | 'PeelFun';
 
 interface Module {
   id: ModuleKey;
@@ -68,10 +68,15 @@ const MODULES: Module[] = [
     modelKey: TEXT_MODEL_KEY,
   },
   {
-    id: 'Nearby', screen: 'Nearby', label: 'OpenStreetMap', title: 'Nearby Health',
-    desc: 'Find hospitals, pharmacies, and clinics near you',
+    id: 'Nearby', screen: 'Nearby', label: 'OpenStreetMap', title: 'Map Search',
+    desc: 'Find any place in the world — no location permission needed',
     icon: (c) => <IconNearby size={20} color={c} />,
     fullWidth: true,
+  },
+  {
+    id: 'PeelFun', screen: 'PeelFun', label: 'Game', title: 'Peel Fun',
+    desc: 'Tic-Tac-Toe vs AI — ask the model to play',
+    icon: (c) => <IconGame size={20} color={c} />,
   },
 ];
 
