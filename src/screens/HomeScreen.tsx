@@ -7,7 +7,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme, useSidebar } from '../navigation/AppNavigator';
 import {
-  IconLens, IconVoice, IconScribe, IconDeep, IconChat, IconMenu,
+  IconLens, IconVoice, IconScribe, IconDeep, IconChat, IconMenu, IconNearby,
 } from '../components/Icons';
 import { syncModelsFromDisk } from '../utils/storage';
 import { MODEL_KEYS } from '../utils/models';
@@ -18,7 +18,7 @@ const H_PAD = 12;
 const CARD_GAP = 10;
 const CARD_W = (SW - H_PAD * 2 - CARD_GAP) / 2;
 
-type ModuleKey = 'Lens' | 'Voice' | 'Scribe' | 'Deep' | 'Chat';
+type ModuleKey = 'Lens' | 'Voice' | 'Scribe' | 'Deep' | 'Chat' | 'Nearby';
 
 interface Module {
   id: ModuleKey;
@@ -65,6 +65,12 @@ const MODULES: Module[] = [
     desc: 'Ask anything — questions, explanations, code, ideas',
     icon: (c) => <IconChat size={20} color={c} />,
     modelKey: TEXT_MODEL_KEY,
+  },
+  {
+    id: 'Nearby', screen: 'Nearby', label: 'OpenStreetMap', title: 'Nearby Health',
+    desc: 'Find hospitals, pharmacies, and clinics near you',
+    icon: (c) => <IconNearby size={20} color={c} />,
+    fullWidth: true,
   },
 ];
 

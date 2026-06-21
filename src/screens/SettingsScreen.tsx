@@ -5,6 +5,8 @@ import {
 } from 'react-native';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme, useThemeToggle } from '../navigation/AppNavigator';
@@ -13,6 +15,7 @@ import {
 } from '../utils/storage';
 import { Accelerator, ResponseLength } from '../types';
 import ConfigSlider from '../components/ConfigSlider';
+import { getInferenceLogs, logsToCSV } from '../utils/auditLogger';
 
 const appVersion = Constants.expoConfig?.version ?? '1.0';
 
@@ -65,6 +68,22 @@ export default function SettingsScreen() {
     </TouchableOpacity>
   );
 
+
+  const handleExportLogs = async () => {
+    try {
+      const logs = await getInferenceLogs();
+      if (logs.length === 0) {
+        Alert.alert('No logs', 'Run some inferences first, then export.');
+        return;
+      }
+      const csv = logsToCSV(logs);
+      const path = `${FileSystem.cacheDirectory}peek-inference-log.csv`;
+      await FileSystem.writeAsStringAsync(path, csv, { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(path, { mimeType: 'text/csv', dialogTitle: 'Export Inference Log' });
+    } catch (e) {
+      Alert.alert('Export failed', String(e));
+    }
+  };
 
   const handleClearData = () => {
     Alert.alert('Clear All Data', 'This will remove all history and settings. Continue?', [
@@ -212,6 +231,9 @@ export default function SettingsScreen() {
           </Text>
         </View>
 
+        <TouchableOpacity style={[styles.exportBtn, { borderColor: theme.border, backgroundColor: theme.card }]} onPress={handleExportLogs}>
+          <Text style={[styles.exportText, { color: theme.text }]}>Export Inference Log (CSV)</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={[styles.dangerBtn, { borderColor: theme.error }]} onPress={handleClearData}>
           <Text style={[styles.dangerText, { color: theme.error }]}>Clear All Data</Text>
         </TouchableOpacity>
@@ -253,7 +275,9 @@ const styles = StyleSheet.create({
   qvacBadge: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 4 },
   qvacBadgeText: { fontSize: 11, fontWeight: '700' },
   qvacDesc: { fontSize: 13, lineHeight: 19 },
-  dangerBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1, marginTop: 16 },
+  exportBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1, marginTop: 16 },
+  exportText: { fontSize: 15, fontWeight: '600' },
+  dangerBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1, marginTop: 10 },
   dangerText: { fontSize: 15, fontWeight: '700' },
   footer: { fontSize: 12, textAlign: 'center', marginTop: 20 },
 });

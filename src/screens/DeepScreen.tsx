@@ -25,6 +25,7 @@ import PeekLoader from '../components/PeekLoader';
 import ModelGalleryPicker from '../components/ModelGalleryPicker';
 import TypingDots from '../components/TypingDots';
 import { DownloadedModel } from '../types';
+import { logInference } from '../utils/auditLogger';
 
 type Phase = 'idle' | 'ingesting' | 'ready' | 'thinking';
 
@@ -263,6 +264,7 @@ export default function DeepScreen() {
 
       const gp = await getGenParams();
       let full = '';
+      let firstTokenMs = -1;
       const run = completion({
         modelId: llmModelId, history: msgs, stream: true,
         captureThinking: false,
@@ -273,6 +275,7 @@ export default function DeepScreen() {
       showRunningNotification('Peek Deep');
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') {
+          if (firstTokenMs < 0) firstTokenMs = Date.now();
           full += (ev as any).text;
           const { answer: visible } = splitStream(full);
           setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: visible || '' } : m));
@@ -284,8 +287,11 @@ export default function DeepScreen() {
 
       const { text: cleanFull } = stripThink(full);
       const finalText = cleanFull.trim() || 'No response.';
-      const elapsed = Math.round((Date.now() - genStart) / 100) / 10;
+      const totalMs = Date.now() - genStart;
+      const ttftMs = firstTokenMs > 0 ? firstTokenMs - genStart : totalMs;
+      const elapsed = Math.round(totalMs / 100) / 10;
       const tokens = stats?.generatedTokens;
+      logInference('Deep', llmModelName, ttftMs, totalMs, tokens ?? 0).catch(() => {});
       setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: finalText, inThink: false, streaming: false, elapsed, tokens } : m));
       const aiCm: ChatMessage = { id: placeholderId, conversationId: convIdRef.current, role: 'assistant', content: finalText, createdAt: new Date().toISOString() };
       await appendMessage(aiCm);

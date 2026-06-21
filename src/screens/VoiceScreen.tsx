@@ -6,6 +6,7 @@ import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import { transcribeStream, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
+import { logInference } from '../utils/auditLogger';
 import { whisperManager, llmManager } from '../utils/modelManager';
 import { showRunningNotification, showDoneNotification, clearInferenceNotifications, registerInferenceCancel, unregisterInferenceCancel } from '../utils/bgNotification';
 import { useNavigation } from '@react-navigation/native';
@@ -323,6 +324,8 @@ export default function VoiceScreen() {
       const mid = await llmManager.ensure(explainModel, modelConfig);
       const gp = await getGenParams();
       let out = '';
+      const genStart = Date.now();
+      let firstTokenMs = -1;
       const run = completion({
         modelId: mid,
         history: [
@@ -338,11 +341,16 @@ export default function VoiceScreen() {
       showRunningNotification('Peek Voice');
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') {
+          if (firstTokenMs < 0) firstTokenMs = Date.now();
           out += (ev as any).text;
           const { answer: visible, inThink } = splitStream(out);
           setSummary(inThink ? '' : (visible || ''));
         }
       }
+      const [, stats] = await Promise.all([run.final, run.stats]);
+      const totalMs = Date.now() - genStart;
+      const ttftMs = firstTokenMs > 0 ? firstTokenMs - genStart : totalMs;
+      logInference('Voice', explainModel.name, ttftMs, totalMs, stats?.generatedTokens ?? 0).catch(() => {});
       const { text: finalOut } = stripThink(out);
       const summaryText = finalOut.trim() || '';
       setSummary(summaryText);

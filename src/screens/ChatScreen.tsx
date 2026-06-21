@@ -14,6 +14,7 @@ import * as Sharing from 'expo-sharing';
 import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
+import { logInference } from '../utils/auditLogger';
 import {
   syncModelsFromDisk, getSettings, getDefaultModelId, setDefaultModelId, getGenParams,
   getConversations, saveConversation, getMessages,
@@ -274,8 +275,10 @@ export default function ChatScreen() {
       showRunningNotification('Peek Scribe');
       let streamed = '';
       let thinkingText = '';
+      let firstTokenMs = -1;
       for await (const event of run.events) {
         if (event.type === 'contentDelta') {
+          if (firstTokenMs < 0) firstTokenMs = Date.now();
           streamed += event.text;
           const { answer: visible, thinking: thinkLive, inThink } = splitStream(streamed);
           setMessages(prev => prev.map(m => m.id === placeholderId
@@ -314,8 +317,11 @@ export default function ChatScreen() {
         }
       }
 
-      const elapsed = Math.round((Date.now() - genStart) / 100) / 10;
+      const totalMs = Date.now() - genStart;
+      const ttftMs = firstTokenMs > 0 ? firstTokenMs - genStart : totalMs;
+      const elapsed = Math.round(totalMs / 100) / 10;
       const tokens = stats?.generatedTokens;
+      logInference('Scribe', modelName, ttftMs, totalMs, tokens ?? 0).catch(() => {});
       setMessages(prev => prev.map(m => m.id === placeholderId
         ? { ...m, text: bubbleText, streaming: false, generatedFile, thinking: finalThinking, elapsed, tokens }
         : m));

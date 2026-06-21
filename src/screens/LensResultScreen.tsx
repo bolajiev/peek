@@ -10,6 +10,7 @@ import {
   showRunningNotification, clearInferenceNotifications,
   registerInferenceCancel, unregisterInferenceCancel,
 } from '../utils/bgNotification';
+import { logInference } from '../utils/auditLogger';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { getSettings, toPath, saveLensScan, updateScanStreak } from '../utils/storage';
@@ -81,6 +82,7 @@ export default function LensResultScreen() {
       void showRunningNotification('Peek Lens');
 
       const genStart = Date.now();
+      let firstTokenMs = -1;
       const imagePath = toPath(photoUri);
       const run = completion({
         modelId: mid,
@@ -97,6 +99,7 @@ export default function LensResultScreen() {
       let streamed = '';
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') {
+          if (firstTokenMs < 0) firstTokenMs = Date.now();
           streamed += (ev as any).text;
           const { answer: visible } = splitStream(streamed);
           setAnswer(visible);
@@ -109,8 +112,11 @@ export default function LensResultScreen() {
       setAnswer(text);
 
       const [, stats] = await Promise.all([run.final, run.stats]);
-      setElapsed(Math.round((Date.now() - genStart) / 1000));
+      const totalMs = Date.now() - genStart;
+      const ttftMs = firstTokenMs > 0 ? firstTokenMs - genStart : totalMs;
+      setElapsed(Math.round(totalMs / 1000));
       if (stats?.generatedTokens) setTokenCount(stats.generatedTokens);
+      logInference('Lens', modelName, ttftMs, totalMs, stats?.generatedTokens ?? 0).catch(() => {});
 
       unregisterInferenceCancel();
       void clearInferenceNotifications();

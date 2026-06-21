@@ -14,6 +14,7 @@ import { llmManager } from '../utils/modelManager';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import { syncModelsFromDisk, getSettings, getDefaultModelId, toPath } from '../utils/storage';
+import { logInference } from '../utils/auditLogger';
 import { SYSTEM_PROMPTS, MODEL_KEYS } from '../utils/models';
 import { IconBack, IconSend } from '../components/Icons';
 import MarkdownText from '../components/MarkdownText';
@@ -108,6 +109,7 @@ export default function QuickChatScreen() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
 
     const phId = 'ai-' + Date.now();
+    const genStart = Date.now();
     setMessages(prev => [...prev, { id: phId, role: 'assistant', text: '', streaming: true }]);
 
     try {
@@ -128,15 +130,20 @@ export default function QuickChatScreen() {
       });
       void showRunningNotification('Quick Chat');
       let out = '';
+      let firstTokenMs = -1;
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') {
+          if (firstTokenMs < 0) firstTokenMs = Date.now();
           out += (ev as any).text;
           setMessages(prev => prev.map(m => m.id === phId ? { ...m, text: out } : m));
           scrollRef.current?.scrollToEnd({ animated: false });
         }
       }
-      await run.final;
+      const [, stats] = await Promise.all([run.final, run.stats]);
       runRef.current = null;
+      const totalMs = Date.now() - genStart;
+      const ttftMs = firstTokenMs > 0 ? firstTokenMs - genStart : totalMs;
+      logInference('QuickChat', modelName, ttftMs, totalMs, stats?.generatedTokens ?? 0).catch(() => {});
       unregisterInferenceCancel();
       void clearInferenceNotifications();
       setMessages(prev => prev.map(m => m.id === phId ? { ...m, streaming: false } : m));

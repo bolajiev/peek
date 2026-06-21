@@ -1,5 +1,5 @@
 import { InferenceLog } from '../types';
-import { addInferenceLog } from './storage';
+import { addInferenceLog, getInferenceLogs } from './storage';
 import * as Device from 'expo-device';
 
 export async function logInference(
@@ -9,45 +9,39 @@ export async function logInference(
   totalMs: number,
   tokensPredicted: number,
 ): Promise<void> {
-  const deviceModel = Device.modelName || 'unknown';
-  const deviceBrand = Device.brand || 'unknown';
-
+  const tokensPerSec = totalMs > 0 ? Math.round((tokensPredicted / totalMs) * 1000 * 10) / 10 : 0;
   const log: InferenceLog = {
     timestamp: new Date().toISOString(),
+    useCase,
     modelName,
     ttftMs,
     totalMs,
     tokensPredicted,
-    deviceModel,
-    deviceBrand,
+    tokensPerSec,
+    deviceModel: Device.modelName || 'unknown',
+    deviceBrand: Device.brand || 'unknown',
   };
-
   await addInferenceLog(log);
 }
 
 export function logsToCSV(logs: InferenceLog[]): string {
   const headers = [
-    'Timestamp',
-    'UseCase',
-    'ModelName',
-    'TTFTms',
-    'Totalms',
-    'TokensPredicted',
-    'DeviceModel',
-    'DeviceBrand',
+    'timestamp', 'useCase', 'modelName',
+    'ttftMs', 'totalMs', 'tokensPredicted', 'tokensPerSec',
+    'deviceModel', 'deviceBrand',
   ];
-
-  const rows = logs.map((l) =>
+  const rows = logs.map(l =>
     [
-      l.timestamp,
-      l.modelName,
-      l.ttftMs,
-      l.totalMs,
-      l.tokensPredicted,
-      l.deviceModel,
-      l.deviceBrand,
+      l.timestamp, l.useCase, l.modelName,
+      l.ttftMs, l.totalMs, l.tokensPredicted, l.tokensPerSec,
+      l.deviceModel, l.deviceBrand,
     ].join(',')
   );
-
   return [headers.join(','), ...rows].join('\n');
 }
+
+export function logsToJSON(logs: InferenceLog[]): string {
+  return JSON.stringify(logs, null, 2);
+}
+
+export { getInferenceLogs };

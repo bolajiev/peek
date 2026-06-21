@@ -30,6 +30,7 @@ import AboutScreen from '../screens/AboutScreen';
 import Sidebar from '../components/Sidebar';
 import AIChatScreen from '../screens/AIChatScreen';
 import AIChatHubScreen from '../screens/AIChatHubScreen';
+import NearbyScreen from '../screens/NearbyScreen';
 
 const Stack = createNativeStackNavigator();
 const { width: SW } = Dimensions.get('window');
@@ -134,6 +135,7 @@ export default function AppNavigator() {
           <Stack.Screen name="History" component={HistoryScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Result" component={ResultScreen} options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="LensResult" component={LensResultScreen} options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="Nearby" component={NearbyScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen
             name="Models"
             component={ModelsScreen}

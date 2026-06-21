@@ -65,10 +65,12 @@ export interface HistoryItem {
 
 export interface InferenceLog {
   timestamp: string;
+  useCase: string;
   modelName: string;
   ttftMs: number;
   totalMs: number;
   tokensPredicted: number;
+  tokensPerSec: number;
   deviceModel: string;
   deviceBrand: string;
 }
