@@ -150,6 +150,18 @@ export default function VoiceScreen() {
     } catch { return cacheUri; }
   };
 
+  const filterHallucination = (text: string): string => {
+    // Strip common Whisper artifacts when there's no real speech
+    const cleaned = text
+      .replace(/\[.*?\]/g, '')
+      .replace(/\(.*?\)/g, '')
+      .replace(/♪[^♪]*♪/g, '')
+      .trim();
+    // Reject if all that's left is punctuation/whitespace
+    if (/^[\s.,!?;:…\-]+$/.test(cleaned)) return '';
+    return cleaned;
+  };
+
   const processChunkQueue = useCallback(async () => {
     if (chunkProcessingRef.current) return;
     chunkProcessingRef.current = true;
@@ -160,12 +172,15 @@ export default function VoiceScreen() {
       while (chunkQueueRef.current.length > 0) {
         const uri = chunkQueueRef.current.shift()!;
         try {
-          const gen = transcribeStream({ modelId: wId, audioChunk: toPath(uri) });
+          // Pass last ~80 chars of existing transcript as Whisper prompt context
+          const prevTail = transcriptRef.current.slice(-80) || undefined;
+          const gen = transcribeStream({ modelId: wId, audioChunk: toPath(uri), prompt: prevTail } as any);
           let text = '';
           for await (const chunk of gen) { text += chunk; }
-          if (text.trim()) {
+          const clean = filterHallucination(text);
+          if (clean) {
             setTranscript(prev => {
-              const next = (prev ? prev + ' ' : '') + text.trim();
+              const next = (prev ? prev + ' ' : '') + clean;
               transcriptRef.current = next;
               return next;
             });
@@ -191,7 +206,25 @@ export default function VoiceScreen() {
     recordingRef.current = null;
     try {
       const newRec = new Audio.Recording();
-      await newRec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await newRec.prepareToRecordAsync({
+        android: {
+          extension: '.m4a',
+          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+          audioEncoder: Audio.AndroidAudioEncoder.AAC,
+          sampleRate: 16000,
+          numberOfChannels: 1,
+          bitRate: 64000,
+        },
+        ios: {
+          extension: '.m4a',
+          audioQuality: Audio.IOSAudioQuality.HIGH,
+          outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+          sampleRate: 16000,
+          numberOfChannels: 1,
+          bitRate: 64000,
+        },
+        web: {},
+      });
       await newRec.startAsync();
       recordingRef.current = newRec;
     } catch {}
@@ -212,7 +245,25 @@ export default function VoiceScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
     const rec = new Audio.Recording();
-    await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+    await rec.prepareToRecordAsync({
+      android: {
+        extension: '.m4a',
+        outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+        audioEncoder: Audio.AndroidAudioEncoder.AAC,
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        bitRate: 64000,
+      },
+      ios: {
+        extension: '.m4a',
+        audioQuality: Audio.IOSAudioQuality.HIGH,
+        outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        bitRate: 64000,
+      },
+      web: {},
+    });
     await rec.startAsync();
     recordingRef.current = rec;
     chunkQueueRef.current = [];
@@ -222,7 +273,7 @@ export default function VoiceScreen() {
     setSummary('');
     setRecordingTime(0);
     timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
-    chunkTimerRef.current = setInterval(rotateChunk, 3000);
+    chunkTimerRef.current = setInterval(rotateChunk, 8000);
     setPhase('recording');
     startPulse();
     startWave();
@@ -286,9 +337,10 @@ export default function VoiceScreen() {
     try {
       const wId = await whisperManager.ensure();
       let text = '';
-      const gen = transcribeStream({ modelId: wId, audioChunk: toPath(uri) });
+      const gen = transcribeStream({ modelId: wId, audioChunk: toPath(uri) } as any);
       for await (const chunk of gen) { text += chunk; }
-      const clean = text.trim() || '(No speech detected)';
+      const filtered = filterHallucination(text);
+      const clean = filtered || '(No speech detected)';
       transcriptRef.current = clean;
       setTranscript(clean);
       setPhase('transcript');

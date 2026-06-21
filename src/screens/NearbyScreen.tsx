@@ -18,8 +18,6 @@ interface Place {
   distM: number;
 }
 
-const NOMINATIM = 'https://nominatim.openstreetmap.org';
-const QUERY_TAGS = ['amenity=hospital', 'amenity=pharmacy', 'amenity=clinic', 'amenity=doctors'];
 const RADIUS_M = 3000;
 
 function distM(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -31,12 +29,17 @@ function distM(lat1: number, lon1: number, lat2: number, lon2: number): number {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function escapeJs(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '\\x3c').replace(/>/g, '\\x3e');
+}
+
 function buildLeafletHtml(lat: number, lon: number, places: Place[], isDark: boolean): string {
   const markers = places
     .slice(0, 20)
     .map(p => {
-      const icon = p.type === 'pharmacy' ? '&#128138;' : p.type === 'hospital' ? '&#127973;' : '&#127978;';
-      return `L.marker([${p.lat},${p.lon}]).addTo(map).bindPopup('<b>${p.name}</b><br>${p.type}<br>${p.distM < 1000 ? `${Math.round(p.distM)}m` : `${(p.distM / 1000).toFixed(1)}km`}');`;
+      const name = escapeJs(p.name);
+      const dist = p.distM < 1000 ? `${Math.round(p.distM)}m` : `${(p.distM / 1000).toFixed(1)}km`;
+      return `L.marker([${p.lat},${p.lon}]).addTo(map).bindPopup('<b>${name}</b><br>${escapeJs(typeLabel(p.type))}<br>${dist}');`;
     })
     .join('\n');
 
@@ -95,7 +98,6 @@ export default function NearbyScreen() {
 
   const [phase, setPhase] = useState<'locating' | 'loading' | 'done' | 'error'>('locating');
   const [statusMsg, setStatusMsg] = useState('Getting your location...');
-  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [mapHtml, setMapHtml] = useState('');
   const abortRef = useRef<AbortController | null>(null);
@@ -106,6 +108,7 @@ export default function NearbyScreen() {
   }, []);
 
   const load = async () => {
+    abortRef.current?.abort();
     setPhase('locating');
     setStatusMsg('Getting your location...');
     try {
@@ -118,7 +121,6 @@ export default function NearbyScreen() {
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const lat = loc.coords.latitude;
       const lon = loc.coords.longitude;
-      setCoords({ lat, lon });
       setPhase('loading');
       setStatusMsg('Finding nearby health facilities...');
       await fetchPlaces(lat, lon);
