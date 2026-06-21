@@ -127,6 +127,7 @@ export default function ModelsScreen() {
 
       const result = await dl.downloadAsync();
       if (!result) throw new Error('Download cancelled');
+      if (result.status !== 200 && result.status !== 206) throw new Error(`HTTP ${result.status}`);
 
       let localProjectionSrc: string | undefined;
 
@@ -165,7 +166,9 @@ export default function ModelsScreen() {
         });
 
         const mmResult = await mmDl.downloadAsync();
-        if (mmResult) localProjectionSrc = mmResult.uri;
+        if (!mmResult) throw new Error('mmproj download cancelled');
+        if (mmResult.status !== 200 && mmResult.status !== 206) throw new Error(`HTTP ${mmResult.status}`);
+        localProjectionSrc = mmResult.uri;
       }
 
       const newModel: DownloadedModel = {

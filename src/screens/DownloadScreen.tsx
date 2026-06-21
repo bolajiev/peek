@@ -50,6 +50,7 @@ export default function DownloadScreen() {
   const [errorMsg, setErrorMsg] = useState('');
 
   const cancelledRef = useRef(false);
+  const mountedRef = useRef(true);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const dlRef = useRef<ReturnType<typeof createDownloadResumable> | null>(null);
   const currentResumeKeyRef = useRef('');
@@ -59,6 +60,16 @@ export default function DownloadScreen() {
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 320, useNativeDriver: true }).start();
     runDownload();
+    return () => {
+      mountedRef.current = false;
+      // Android back gesture — pause and save resume state without blocking unmount
+      if (dlRef.current && currentResumeKeyRef.current && !cancelledRef.current) {
+        cancelledRef.current = true;
+        dlRef.current.pauseAsync().then(state => {
+          AsyncStorage.setItem(currentResumeKeyRef.current, JSON.stringify(state)).catch(() => {});
+        }).catch(() => {});
+      }
+    };
   }, []);
 
   const model = AVAILABLE_MODELS.find(m => m.id === modelId);
@@ -80,7 +91,7 @@ export default function DownloadScreen() {
       if (cancelledRef.current) return;
 
       if (m.projectionModelSrc) {
-        await downloadFile(m, m.projectionModelSrc, 'mmproj.gguf', headers, 80, 100, 'Downloading projection…');
+        await downloadFile(m, m.projectionModelSrc, 'mmproj.gguf', headers, 80, 100, 'Downloading vision file…');
         if (cancelledRef.current) return;
       }
 
@@ -136,7 +147,7 @@ export default function DownloadScreen() {
     lastTimeRef.current = Date.now();
 
     const dl = createDownloadResumable(url, destUri, { headers }, (p) => {
-      if (cancelledRef.current) return;
+      if (cancelledRef.current || !mountedRef.current) return;
 
       // Speed calculation — update every 0.5s
       const now = Date.now();
