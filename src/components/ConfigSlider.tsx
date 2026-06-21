@@ -18,30 +18,32 @@ interface Props {
 export default function ConfigSlider({
   label, value, min, max, step = 1, decimals = 0, warn, theme, onChange,
 }: Props) {
-  const [trackWidth, setTrackWidth] = useState(0);
   const [inputVal, setInputVal] = useState(value.toFixed(decimals));
   const trackRef = useRef<View>(null);
+  const trackWidthRef = useRef(0);
 
   const clamp = (v: number) => Math.min(max, Math.max(min, v));
   const snapToStep = (v: number) => Math.round(v / step) * step;
-  const fillRatio = trackWidth > 0 ? Math.max(0, Math.min(1, (value - min) / (max - min))) : 0;
+  const fillRatio = Math.max(0, Math.min(1, (value - min) / (max - min)));
 
   const panResponder = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
     onPanResponderGrant: (e) => {
-      if (!trackWidth) return;
+      const tw = trackWidthRef.current;
+      if (!tw) return;
       const x = e.nativeEvent.locationX;
-      const ratio = Math.max(0, Math.min(1, x / trackWidth));
+      const ratio = Math.max(0, Math.min(1, x / tw));
       const raw = min + ratio * (max - min);
       const snapped = clamp(snapToStep(raw));
       setInputVal(snapped.toFixed(decimals));
       onChange(snapped);
     },
     onPanResponderMove: (e) => {
-      if (!trackWidth) return;
+      const tw = trackWidthRef.current;
+      if (!tw) return;
       const x = e.nativeEvent.locationX;
-      const ratio = Math.max(0, Math.min(1, x / trackWidth));
+      const ratio = Math.max(0, Math.min(1, x / tw));
       const raw = min + ratio * (max - min);
       const snapped = clamp(snapToStep(raw));
       setInputVal(snapped.toFixed(decimals));
@@ -50,7 +52,7 @@ export default function ConfigSlider({
   })).current;
 
   const handleTrackLayout = (e: LayoutChangeEvent) => {
-    setTrackWidth(e.nativeEvent.layout.width);
+    trackWidthRef.current = e.nativeEvent.layout.width;
   };
 
   const handleInputEnd = (text: string) => {

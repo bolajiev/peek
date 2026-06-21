@@ -12,7 +12,7 @@ const appVersion = Constants.expoConfig?.version ?? '1.0';
 
 const FEATURES = [
   { tag: 'Lens', title: 'Peek Lens', desc: 'Point your camera at anything — food labels, documents, or objects — and get instant on-device analysis.' },
-  { tag: 'Voice', title: 'Peek Voice', desc: 'Record or upload audio and get live transcriptions with AI-generated summaries, entirely offline.' },
+  { tag: 'Voice', title: 'Peek Voice', desc: 'Record or upload audio and get live transcriptions with AI-generated summaries, all processed on-device.' },
   { tag: 'Scribe', title: 'Peek Scribe', desc: 'Draft documents, meal plans, reports, and notes. Export as markdown or HTML — all generated on your phone.' },
   { tag: 'Deep', title: 'Peek Deep', desc: 'Upload files and ask detailed questions about their content. Private research without the cloud.' },
   { tag: 'Chat', title: 'AI Chat', desc: 'Have open-ended conversations with a local language model. History saved on-device across sessions.' },
@@ -71,7 +71,7 @@ export default function AboutScreen() {
           <Text style={[styles.appName, { color: theme.text }]}>Peek</Text>
           <Text style={[styles.tagline, { color: theme.textSecondary }]}>Private AI that runs on your phone.</Text>
           <View style={styles.badgeRow}>
-            {['Private', 'Offline', 'No Cloud'].map(b => (
+            {['Private', 'On-Device', 'No Cloud'].map(b => (
               <View key={b} style={[styles.badge, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
                 <Text style={[styles.badgeText, { color: theme.textSecondary }]}>{b}</Text>
               </View>
@@ -83,7 +83,7 @@ export default function AboutScreen() {
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Text style={[styles.cardTitle, { color: theme.text }]}>What is Peek?</Text>
           <Text style={[styles.cardBody, { color: theme.textSecondary }]}>
-            Peek is a fully private AI assistant that runs entirely on your device using the QVAC SDK. No internet required, no data collection, no subscriptions. Five modules — Vision, Voice, Scribe, Deep Research, and AI Chat — all powered by on-device language models.
+            Peek is a fully private AI assistant powered by the QVAC SDK. Models run entirely on your device — no data collection, no subscriptions, no cloud. Five modules: Lens, Voice, Scribe, Deep Research, and AI Chat.
           </Text>
         </View>
 
@@ -105,7 +105,7 @@ export default function AboutScreen() {
         <View style={[styles.privacyCard, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
           <View style={[styles.privacyDot, { backgroundColor: theme.accent }]} />
           <Text style={[styles.privacyText, { color: theme.textSecondary }]}>
-            All AI inference runs locally on your device using the QVAC SDK. Your data never leaves your phone — no servers, no telemetry, no accounts.
+            All AI inference runs on your device via the QVAC SDK. Your photos, audio, documents, and conversations never leave your phone — no servers, no telemetry, no accounts.
           </Text>
         </View>
 

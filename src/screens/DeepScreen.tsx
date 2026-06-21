@@ -38,6 +38,8 @@ interface Message {
   streaming?: boolean;
   sources?: string[];
   showSources?: boolean;
+  elapsed?: number;
+  tokens?: number;
 }
 
 export default function DeepScreen() {
@@ -105,6 +107,7 @@ export default function DeepScreen() {
         closeRagWorkspace(ragWorkspaceRef.current).catch(() => {});
         ragWorkspaceRef.current = '';
       }
+      void llmManager.release().catch(() => {});
     };
   }, []);
 
@@ -243,6 +246,7 @@ export default function DeepScreen() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
     const placeholderId = 'ai-' + Date.now();
+    const genStart = Date.now();
 
     try {
       const docs = await ragQuery(embedIdRef.current, q, 5, ragWorkspaceRef.current);
@@ -279,12 +283,15 @@ export default function DeepScreen() {
           setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, thinking: thinkingFull, inThink: true } : m));
         }
       }
+      const [, stats] = await Promise.all([run.final, run.stats]);
       currentRunRef.current = null;
 
       const { text: cleanFull, thinking: thinkFallback } = stripThink(full);
       const finalText = cleanFull.trim() || 'No response.';
       const finalThinking = thinkingFull || thinkFallback || undefined;
-      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: finalText, thinking: finalThinking, inThink: false, streaming: false } : m));
+      const elapsed = Math.round((Date.now() - genStart) / 100) / 10;
+      const tokens = stats?.generatedTokens;
+      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: finalText, thinking: finalThinking, inThink: false, streaming: false, elapsed, tokens } : m));
       const aiCm: ChatMessage = { id: placeholderId, conversationId: convIdRef.current, role: 'assistant', content: finalText, thinking: finalThinking, createdAt: new Date().toISOString() };
       await appendMessage(aiCm);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -333,7 +340,7 @@ export default function DeepScreen() {
           <Text style={[styles.headerTitle, { color: theme.text }]}>Peek Deep</Text>
           <Text style={[styles.headerSub, { color: llmLoading ? theme.accent : sourceTitle ? theme.accent : theme.textSecondary }]} numberOfLines={1}>
             {llmLoading
-              ? `Loading${llmProgress > 0 ? ` ${Math.round(llmProgress)}%` : '...'}`
+              ? 'Loading model...'
               : sourceTitle || `${llmModelName} ▾`}
           </Text>
         </TouchableOpacity>
@@ -344,11 +351,6 @@ export default function DeepScreen() {
           : <View style={{ width: 48 }} />}
       </View>
 
-      {llmLoading && (
-        <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
-          <View style={[styles.progressFill, { backgroundColor: theme.accent, width: `${llmProgress || 8}%` }]} />
-        </View>
-      )}
 
       {noModel ? (
         <View style={styles.centeredPane}>
@@ -463,10 +465,16 @@ export default function DeepScreen() {
                   </>
                 ) : null}
                 {msg.role === 'assistant' && msg.text ? (
-                  <View style={styles.bubbleActions}>
-                    <CopyButton text={msg.text} color={theme.textSecondary} size={11} />
-                    <ResultActions text={msg.text} title={`peek-deep-${Date.now()}`} theme={theme} compact />
-                  </View>
+                  <>
+                    <View style={styles.bubbleActions}>
+                      <ResultActions text={msg.text} title={`peek-deep-${Date.now()}`} theme={theme} compact />
+                    </View>
+                    {(msg.elapsed !== undefined || msg.tokens !== undefined) ? (
+                      <Text style={[styles.statLine, { color: theme.textSecondary }]}>
+                        {[msg.elapsed !== undefined ? `${msg.elapsed}s` : null, msg.tokens !== undefined ? `${msg.tokens} tokens` : null].filter(Boolean).join(' · ')}
+                      </Text>
+                    ) : null}
+                  </>
                 ) : null}
               </View>
             ))}
@@ -564,6 +572,7 @@ const styles = StyleSheet.create({
   turnLeft: { alignSelf: 'flex-start' },
   turnRight: { alignSelf: 'flex-end' },
   bubbleActions: { flexDirection: 'row', paddingHorizontal: 4 },
+  statLine: { fontSize: 11, marginTop: 2, paddingHorizontal: 4, fontVariant: ['tabular-nums'] },
   bubble: { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12 },
   bubbleText: { fontSize: 15, lineHeight: 22 },
   thinkingLive: { borderRadius: 14, borderWidth: 1, padding: 12, gap: 4 },

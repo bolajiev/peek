@@ -41,6 +41,7 @@ export default function LensResultScreen() {
     runAnalysis();
     return () => {
       if (runRef.current) cancel({ requestId: runRef.current.requestId }).catch(() => {});
+      void llmManager.release().catch(() => {});
     };
   }, []);
 
@@ -60,7 +61,7 @@ export default function LensResultScreen() {
 
       setStatusText('Loading model…');
       const mid = await llmManager.ensure(modelInfo, cfg, (pct) => {
-        setStatusText(`Loading ${Math.round(pct)}%…`);
+        setStatusText('Loading model...');
       });
 
       setPhase('streaming');

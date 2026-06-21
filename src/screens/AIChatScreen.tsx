@@ -22,6 +22,7 @@ import { DownloadedModel, Conversation, ChatMessage } from '../types';
 import { showRunningNotification, showDoneNotification, clearInferenceNotifications, registerInferenceCancel, unregisterInferenceCancel } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
+import TypingDots from '../components/TypingDots';
 import { setDefaultModelId } from '../utils/storage';
 import { IconBack } from '../components/Icons';
 import ModelGalleryPicker from '../components/ModelGalleryPicker';
@@ -34,6 +35,8 @@ interface Message {
   inThink?: boolean;
   thinking?: string;
   showThinking?: boolean;
+  elapsed?: number;
+  tokens?: number;
 }
 
 const SYSTEM_PROMPT = SYSTEM_PROMPTS.chat;
@@ -84,6 +87,11 @@ export default function AIChatScreen() {
       Animated.timing(inputPadBot, { toValue: 0, duration: 160, useNativeDriver: false }).start();
     });
     return () => { show.remove(); hide.remove(); };
+  }, []);
+
+  // ── model unload on unmount ─────────────────────────────
+  useEffect(() => {
+    return () => { void llmManager.release().catch(() => {}); };
   }, []);
 
   // ── model init ──────────────────────────────────────────
@@ -184,6 +192,7 @@ export default function AIChatScreen() {
     setGenElapsed(0);
     setInput('');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const genStart = Date.now();
     const userId = `u-${Date.now()}`;
     const placeholderId = `a-${Date.now()}`;
     const userMsg: Message = { id: userId, role: 'user', text: messageText };
@@ -233,14 +242,16 @@ export default function AIChatScreen() {
           setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, thinking: thinkingText, inThink: true } : m));
         }
       }
-      await run.final;
+      const [, stats] = await Promise.all([run.final, run.stats]);
       currentRunRef.current = null;
 
       const { text: displayText, thinking: thinkFallback } = stripThink(streamed);
       const finalThinking = thinkingText || thinkFallback || undefined;
+      const elapsed = Math.round((Date.now() - genStart) / 100) / 10;
+      const tokens = stats?.generatedTokens;
 
       setMessages(prev => prev.map(m => m.id === placeholderId
-        ? { ...m, text: displayText, streaming: false, thinking: finalThinking }
+        ? { ...m, text: displayText, streaming: false, thinking: finalThinking, elapsed, tokens }
         : m));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const aiMsg: Message = { id: placeholderId, role: 'assistant', text: displayText, thinking: finalThinking };
@@ -308,7 +319,7 @@ export default function AIChatScreen() {
         <TouchableOpacity style={styles.modelPillBtn} onPress={() => setPickerVisible(true)} activeOpacity={0.7}>
           <View style={[styles.modelDot, { backgroundColor: !modelLoading && !noModel ? theme.accent : theme.border }]} />
           <Text style={[styles.modelPillText, { color: theme.text }]} numberOfLines={1}>
-            {modelLoading ? `Loading... ${Math.round(loadProgress * 100)}%` : noModel ? 'No model' : modelName}
+            {modelLoading ? 'Loading model...' : noModel ? 'No model' : modelName}
           </Text>
           <Text style={[styles.modelPillChevron, { color: theme.textSecondary }]}>▾</Text>
         </TouchableOpacity>
@@ -447,12 +458,18 @@ function MessageBubble({ msg, theme, onToggleThinking, showThinkToggle }: {
               msg.inThink ? (
                 <View style={styles.thinkingLive}>
                   <Text style={[styles.thinkingLiveLabel, { color: theme.accent }]}>Thinking...</Text>
-                  {msg.thinking ? <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={6}>{msg.thinking}|</Text> : null}
+                  {msg.thinking
+                    ? <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={6}>{msg.thinking}</Text>
+                    : null}
+                  <TypingDots color={theme.textSecondary} size={5} />
                 </View>
               ) : msg.text ? (
-                <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}|</Text>
+                <View>
+                  <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}</Text>
+                  <TypingDots color={theme.textSecondary} size={5} />
+                </View>
               ) : (
-                <Text style={[styles.bubbleText, { color: theme.textSecondary }]}>|</Text>
+                <TypingDots color={theme.textSecondary} size={6} />
               )
             ) : msg.text ? (
               <MarkdownText color={theme.text} fontSize={15} lineHeight={22}>
@@ -482,6 +499,12 @@ function MessageBubble({ msg, theme, onToggleThinking, showThinkToggle }: {
               <CopyButton text={msg.text} color={theme.textSecondary} size={11} />
             </View>
           ) : null}
+
+          {!msg.streaming && (msg.elapsed !== undefined || msg.tokens !== undefined) ? (
+            <Text style={[styles.statLine, { color: theme.textSecondary }]}>
+              {[msg.elapsed !== undefined ? `${msg.elapsed}s` : null, msg.tokens !== undefined ? `${msg.tokens} tokens` : null].filter(Boolean).join(' · ')}
+            </Text>
+          ) : null}
         </View>
       ) : (
         <View style={[styles.userBubble, { backgroundColor: theme.accent }]}>
@@ -496,7 +519,7 @@ function TypingIndicator({ theme }: { theme: any }) {
   return (
     <View style={styles.bubbleRow}>
       <View style={[styles.aiBubble, { backgroundColor: theme.card }]}>
-        <Text style={[styles.bubbleText, { color: theme.textSecondary }]}>|</Text>
+        <TypingDots color={theme.textSecondary} size={6} />
       </View>
     </View>
   );
@@ -535,6 +558,7 @@ const styles = StyleSheet.create({
   thinkingBox: { padding: 10, borderRadius: 10, borderWidth: 1 },
   thinkingText: { fontSize: 12, lineHeight: 18, fontStyle: 'italic' },
   bubbleActions: { flexDirection: 'row', gap: 8, marginTop: 2 },
+  statLine: { fontSize: 11, marginTop: 4, fontVariant: ['tabular-nums'] },
   inputWrap: { paddingHorizontal: 12, paddingTop: 8 },
   inputContainer: { borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 },
   textInput: { fontSize: 15, maxHeight: 120, minHeight: 20 },

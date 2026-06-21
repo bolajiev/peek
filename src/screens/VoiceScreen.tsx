@@ -76,6 +76,7 @@ export default function VoiceScreen() {
       recordingRef.current?.stopAndUnloadAsync().catch(() => {});
       sub.remove();
       clearInferenceNotifications();
+      void llmManager.release().catch(() => {});
     };
   }, []);
 

@@ -42,6 +42,8 @@ interface Message {
   thinking?: string;
   showThinking?: boolean;
   generatedFile?: GeneratedFile;
+  elapsed?: number;
+  tokens?: number;
 }
 
 const SYSTEM_DOC = SYSTEM_PROMPTS.scribe;
@@ -131,6 +133,7 @@ export default function ChatScreen() {
       if (currentRunRef.current) {
         void cancel({ requestId: currentRunRef.current.requestId }).catch(() => {});
       }
+      void llmManager.release().catch(() => {});
     };
   }, []);
 
@@ -257,6 +260,7 @@ export default function ChatScreen() {
     ];
 
     const placeholderId = 'ai-' + Date.now();
+    const genStart = Date.now();
     setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', text: '', streaming: true }]);
 
     const gp = await getGenParams();
@@ -284,7 +288,7 @@ export default function ChatScreen() {
           setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, thinking: thinkingText, inThink: true } : m));
         }
       }
-      await run.final;
+      const [, stats] = await Promise.all([run.final, run.stats]);
       currentRunRef.current = null;
 
       // Final clean split — answer is text after </think>, thinking is captured content
@@ -311,8 +315,10 @@ export default function ChatScreen() {
         }
       }
 
+      const elapsed = Math.round((Date.now() - genStart) / 100) / 10;
+      const tokens = stats?.generatedTokens;
       setMessages(prev => prev.map(m => m.id === placeholderId
-        ? { ...m, text: bubbleText, streaming: false, generatedFile, thinking: finalThinking }
+        ? { ...m, text: bubbleText, streaming: false, generatedFile, thinking: finalThinking, elapsed, tokens }
         : m));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const aiMsg: Message = { id: placeholderId, role: 'assistant', text: bubbleText, thinking: finalThinking, generatedFile };
@@ -351,17 +357,11 @@ export default function ChatScreen() {
       const artifactsDir = new Directory(Paths.document, 'artifacts');
       await artifactsDir.create({ intermediates: true, idempotent: true });
       const ts = Date.now();
-      const preferredExt = type === 'md' ? 'md' : 'html';
-      let file = new File(artifactsDir, `peek-scribe-${ts}.${preferredExt}`);
-      let savedType = type;
-      try {
-        await file.write(source);
-      } catch {
-        file = new File(artifactsDir, `peek-scribe-${ts}.html`);
-        await file.write(source);
-        savedType = 'html';
-      }
-      return { name: file.uri.split('/').pop() ?? `peek-scribe-${ts}.${preferredExt}`, fileUri: file.uri, artifactType: savedType };
+      const ext = type === 'md' ? 'md' : 'html';
+      const fileName = `peek-scribe-${ts}.${ext}`;
+      const file = new File(artifactsDir, fileName);
+      await FileSystem.writeAsStringAsync(file.uri, source, { encoding: 'utf8' });
+      return { name: fileName, fileUri: file.uri, artifactType: type };
     } catch {
       return undefined;
     }
@@ -480,9 +480,9 @@ export default function ChatScreen() {
           <Text style={[styles.headerTitle, { color: theme.text }]}>{mode === 'document' ? 'Document' : 'Scribe'}</Text>
           <Text style={[styles.headerSub, { color: modelLoading ? theme.accent : isTyping ? theme.accent : theme.textSecondary }]} numberOfLines={1}>
             {modelLoading
-              ? `Loading${loadProgress > 0 ? ` ${Math.round(loadProgress)}%` : '...'}`
+              ? 'Loading model...'
               : isTyping
-              ? `Generating… ${genElapsed}s`
+              ? `Generating... ${genElapsed}s`
               : `${modelName} ▾`}
           </Text>
         </TouchableOpacity>
@@ -495,11 +495,6 @@ export default function ChatScreen() {
         </View>
       </View>
 
-      {modelLoading && (
-        <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
-          <View style={[styles.progressFill, { backgroundColor: theme.accent, width: `${loadProgress || 8}%` }]} />
-        </View>
-      )}
 
       <KeyboardAvoidingView
         style={styles.keyboardFlex}
@@ -714,6 +709,11 @@ function MessageBubble({ msg, theme, onToggleThinking, onShareFile }: {
               <CopyButton text={msg.text} color={theme.textSecondary} size={11} />
             </View>
           ) : null}
+          {!msg.streaming && (msg.elapsed !== undefined || msg.tokens !== undefined) ? (
+            <Text style={[styles.statLine, { color: theme.textSecondary }]}>
+              {[msg.elapsed !== undefined ? `${msg.elapsed}s` : null, msg.tokens !== undefined ? `${msg.tokens} tokens` : null].filter(Boolean).join(' · ')}
+            </Text>
+          ) : null}
         </View>
       ) : (
         <View style={[styles.userBubble, { backgroundColor: theme.accent }]}>
@@ -796,6 +796,7 @@ const styles = StyleSheet.create({
   aiBubbleWrap: { maxWidth: '84%', gap: 4 },
   aiBubble: { borderRadius: 18, borderTopLeftRadius: 4, padding: 14, gap: 6 },
   bubbleActions: { flexDirection: 'row', paddingHorizontal: 4 },
+  statLine: { fontSize: 11, marginTop: 2, paddingHorizontal: 4, fontVariant: ['tabular-nums'] },
   userBubble: { maxWidth: '84%', borderRadius: 18, borderTopRightRadius: 4, padding: 14 },
   bubbleImage: { width: 180, height: 120, borderRadius: 10 },
   bubbleText: { fontSize: 15, lineHeight: 22 },
