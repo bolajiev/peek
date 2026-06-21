@@ -182,8 +182,8 @@ export async function getGenParams(): Promise<{ temp: number; top_k: number; top
   const s = await getSettings();
   return {
     temp: s.temperature ?? 0.7,
-    top_k: s.topK ?? 40,
-    top_p: s.topP ?? 0.95,
+    top_k: s.topK ?? 20,
+    top_p: s.topP ?? 0.9,
     repeat_penalty: s.repeatPenalty ?? 1.1,
     maxTokens: s.maxTokens ?? 1024,
   };

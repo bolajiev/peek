@@ -395,8 +395,8 @@ export default function VoiceScreen() {
         if ((ev as any).type === 'contentDelta') {
           if (firstTokenMs < 0) firstTokenMs = Date.now();
           out += (ev as any).text;
-          const { answer: visible, inThink } = splitStream(out);
-          setSummary(inThink ? '' : (visible || ''));
+          const { answer: visible } = splitStream(out);
+          setSummary(visible || '');
         }
       }
       const [, stats] = await Promise.all([run.final, run.stats]);

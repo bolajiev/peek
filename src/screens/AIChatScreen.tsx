@@ -229,37 +229,32 @@ export default function AIChatScreen() {
       registerInferenceCancel(() => { if (currentRunRef.current) cancel({ requestId: currentRunRef.current.requestId }).catch(() => {}); });
       showRunningNotification('AI Chat');
       let streamed = '';
-      let thinkingText = '';
       let firstTokenMs = -1;
       for await (const event of run.events) {
         if (event.type === 'contentDelta') {
           if (firstTokenMs < 0) firstTokenMs = Date.now();
           streamed += event.text;
-          const { answer: visible, thinking: thinkLive, inThink } = splitStream(streamed);
+          const { answer: visible } = splitStream(streamed);
           setMessages(prev => prev.map(m => m.id === placeholderId
-            ? { ...m, text: visible, thinking: thinkingText || thinkLive, inThink }
+            ? { ...m, text: visible, inThink: false }
             : m));
           scrollRef.current?.scrollToEnd({ animated: false });
-        } else if (event.type === 'thinkingDelta') {
-          thinkingText += event.text;
-          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, thinking: thinkingText, inThink: true } : m));
         }
       }
       const [, stats] = await Promise.all([run.final, run.stats]);
       currentRunRef.current = null;
 
-      const { text: displayText, thinking: thinkFallback } = stripThink(streamed);
-      const finalThinking = thinkingText || thinkFallback || undefined;
+      const { text: displayText } = stripThink(streamed);
       const totalMs = Date.now() - genStart;
       const ttftMs = firstTokenMs > 0 ? firstTokenMs - genStart : totalMs;
       const elapsed = Math.round(totalMs / 100) / 10;
       const tokens = stats?.generatedTokens;
       logInference('AIChat', modelName, ttftMs, totalMs, tokens ?? 0).catch(() => {});
       setMessages(prev => prev.map(m => m.id === placeholderId
-        ? { ...m, text: displayText, streaming: false, thinking: finalThinking, elapsed, tokens }
+        ? { ...m, text: displayText, streaming: false, thinking: undefined, elapsed, tokens }
         : m));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const aiMsg: Message = { id: placeholderId, role: 'assistant', text: displayText, thinking: finalThinking };
+      const aiMsg: Message = { id: placeholderId, role: 'assistant', text: displayText };
       await persistMessage(aiMsg);
     } catch (err) {
       currentRunRef.current = null;

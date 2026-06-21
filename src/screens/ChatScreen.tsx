@@ -274,28 +274,23 @@ export default function ChatScreen() {
       registerInferenceCancel(() => { if (currentRunRef.current) cancel({ requestId: currentRunRef.current.requestId }).catch(() => {}); });
       showRunningNotification('Peek Scribe');
       let streamed = '';
-      let thinkingText = '';
       let firstTokenMs = -1;
       for await (const event of run.events) {
         if (event.type === 'contentDelta') {
           if (firstTokenMs < 0) firstTokenMs = Date.now();
           streamed += event.text;
-          const { answer: visible, thinking: thinkLive, inThink } = splitStream(streamed);
+          const { answer: visible } = splitStream(streamed);
           setMessages(prev => prev.map(m => m.id === placeholderId
-            ? { ...m, text: visible, thinking: thinkingText || thinkLive, inThink }
+            ? { ...m, text: visible, inThink: false }
             : m));
           scrollRef.current?.scrollToEnd({ animated: false });
-        } else if (event.type === 'thinkingDelta') {
-          thinkingText += event.text;
-          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, thinking: thinkingText, inThink: true } : m));
         }
       }
       const [, stats] = await Promise.all([run.final, run.stats]);
       currentRunRef.current = null;
 
-      // Final clean split — answer is text after </think>, thinking is captured content
-      const { text: displayText, thinking: thinkFallback } = stripThink(streamed);
-      const finalThinking = thinkingText || thinkFallback || undefined;
+      const { text: displayText } = stripThink(streamed);
+      const finalThinking = undefined;
       const artifact = detectArtifact(displayText);
       let generatedFile: GeneratedFile | undefined;
       // Strip artifact block from bubble text — shown via file card / MD panel instead
