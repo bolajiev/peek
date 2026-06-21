@@ -5,9 +5,9 @@ import {
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
-import { transcribeStream, completion, InferenceCancelledError } from '@qvac/sdk';
+import { transcribeStream, completion, cancel, InferenceCancelledError } from '@qvac/sdk';
 import { whisperManager, llmManager } from '../utils/modelManager';
-import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
+import { showRunningNotification, showDoneNotification, clearInferenceNotifications, registerInferenceCancel, unregisterInferenceCancel } from '../utils/bgNotification';
 import { useNavigation } from '@react-navigation/native';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
@@ -18,6 +18,7 @@ import { IconVoice, IconUpload, IconMic, IconBack } from '../components/Icons';
 import MarkdownText from '../components/MarkdownText';
 import PeekLoader from '../components/PeekLoader';
 import ResultActions from '../components/ResultActions';
+import TypingDots from '../components/TypingDots';
 
 type Phase = 'idle' | 'recording' | 'transcribing' | 'transcript' | 'summarizing' | 'done';
 
@@ -34,8 +35,10 @@ export default function VoiceScreen() {
   const [summary, setSummary] = useState('');
   const [initError, setInitError] = useState<string | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [phaseElapsed, setPhaseElapsed] = useState(0);
   const [whisperReady, setWhisperReady] = useState(false);
   const [loaderLabel, setLoaderLabel] = useState('Finalizing transcript…');
+  const phaseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -48,6 +51,7 @@ export default function VoiceScreen() {
   const chunkQueueRef = useRef<string[]>([]);
   const chunkProcessingRef = useRef(false);
   const isStoppingRef = useRef(false);
+  const currentRunRef = useRef<any>(null);
   const liveScrollRef = useRef<ScrollView>(null);
   const phaseRef = useRef<Phase>('idle');
   const autoSummarizeRef = useRef(false);
@@ -86,6 +90,17 @@ export default function VoiceScreen() {
   const clearTimers = () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (chunkTimerRef.current) { clearInterval(chunkTimerRef.current); chunkTimerRef.current = null; }
+    if (phaseTimerRef.current) { clearInterval(phaseTimerRef.current); phaseTimerRef.current = null; }
+  };
+
+  const startPhaseTimer = () => {
+    if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
+    setPhaseElapsed(0);
+    phaseTimerRef.current = setInterval(() => setPhaseElapsed(s => s + 1), 1000);
+  };
+
+  const stopPhaseTimer = () => {
+    if (phaseTimerRef.current) { clearInterval(phaseTimerRef.current); phaseTimerRef.current = null; }
   };
 
   // ── Waveform ──────────────────────────────────────────────
@@ -205,7 +220,7 @@ export default function VoiceScreen() {
     setSummary('');
     setRecordingTime(0);
     timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
-    chunkTimerRef.current = setInterval(rotateChunk, 2000);
+    chunkTimerRef.current = setInterval(rotateChunk, 3000);
     setPhase('recording');
     startPulse();
     startWave();
@@ -236,6 +251,7 @@ export default function VoiceScreen() {
       setPhase('transcript');
     } else {
       setPhase('transcribing');
+      startPhaseTimer();
       processChunkQueue();
     }
   };
@@ -261,6 +277,7 @@ export default function VoiceScreen() {
   const doTranscribeFile = async (uri: string) => {
     setPhase('transcribing');
     setLoaderLabel('Transcribing…');
+    startPhaseTimer();
     setTranscript('');
     setSummary('');
     autoSummarizeRef.current = true;
@@ -286,6 +303,7 @@ export default function VoiceScreen() {
     if (!currentTranscript || currentTranscript === '(No speech detected)') return;
     setPhase('summarizing');
     setSummary('');
+    startPhaseTimer();
     try {
       const synced = await syncModelsFromDisk();
       const textModel = synced.find(m => m.id === MODEL_KEYS.TEXT_HEALTH)
@@ -311,11 +329,14 @@ export default function VoiceScreen() {
         captureThinking: false,
         generationParams: { predict: gp.maxTokens, temp: gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty },
       });
+      currentRunRef.current = run;
+      registerInferenceCancel(() => { if (currentRunRef.current) cancel({ requestId: currentRunRef.current.requestId }).catch(() => {}); });
+      showRunningNotification('Peek Voice');
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') {
           out += (ev as any).text;
           const { answer: visible, inThink } = splitStream(out);
-          setSummary(inThink ? '▍' : (visible || '▍'));
+          setSummary(inThink ? '' : (visible || ''));
         }
       }
       const { text: finalOut } = stripThink(out);
@@ -338,6 +359,8 @@ export default function VoiceScreen() {
       }
       clearInferenceNotifications();
     } finally {
+      unregisterInferenceCancel();
+      stopPhaseTimer();
       setPhase('done');
     }
   };
@@ -466,9 +489,10 @@ export default function VoiceScreen() {
             showsVerticalScrollIndicator={false}
           >
             {transcript ? (
-              <Text style={[styles.liveText, { color: theme.text }]}>
-                {transcript}<Text style={{ color: theme.accent }}>▍</Text>
-              </Text>
+              <View>
+                <Text style={[styles.liveText, { color: theme.text }]}>{transcript}</Text>
+                <TypingDots color={theme.accent} size={6} />
+              </View>
             ) : (
               <View style={styles.liveEmpty}>
                 <Text style={[styles.liveEmptyText, { color: theme.textSecondary }]}>
@@ -484,6 +508,9 @@ export default function VoiceScreen() {
       {phase === 'transcribing' && (
         <View style={styles.centeredPane}>
           <PeekLoader label={loaderLabel} />
+          <Text style={[styles.phaseTimer, { color: theme.textSecondary }]}>
+            {fmtTime(phaseElapsed)}
+          </Text>
         </View>
       )}
 
@@ -514,7 +541,7 @@ export default function VoiceScreen() {
           <View style={[styles.sectionRow, { marginTop: 24 }]}>
             <Text style={[styles.sectionHead, { color: theme.textSecondary }]}>SUMMARY</Text>
             {phase === 'summarizing' && (
-              <Text style={[styles.wordCount, { color: theme.accent }]}>Generating…</Text>
+              <Text style={[styles.wordCount, { color: theme.accent }]}>{fmtTime(phaseElapsed)}</Text>
             )}
             {phase === 'done' && !summary && (
               <Text style={[styles.wordCount, { color: theme.textSecondary }]}>No model</Text>
@@ -541,17 +568,18 @@ export default function VoiceScreen() {
           ) : phase === 'summarizing' ? (
             // Streaming summary — tokens arrive live
             <View style={[styles.resultBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              <Text style={[styles.resultText, { color: theme.text }]}>
-                {summary || ''}
-                <Text style={{ color: theme.accent }}>▍</Text>
-              </Text>
+              {summary ? (
+                <Text style={[styles.resultText, { color: theme.text }]}>{summary}</Text>
+              ) : (
+                <TypingDots color={theme.accent} size={7} />
+              )}
             </View>
           ) : null}
 
           {/* Continue in Chat */}
           <TouchableOpacity
             style={[styles.chatBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
-            onPress={() => navigation.navigate('ScribeChat', { mode: 'chat', seedQuery: `Transcript:\n\n${transcript}` })}
+            onPress={() => navigation.navigate('AIChat', { seedMessage: `Transcript:\n\n${transcript}` })}
             activeOpacity={0.75}
           >
             <Text style={[styles.chatBtnText, { color: theme.accent }]}>Continue in Chat →</Text>
@@ -624,7 +652,8 @@ const styles = StyleSheet.create({
   liveEmpty: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
   liveEmptyText: { fontSize: 14, textAlign: 'center', lineHeight: 21 },
   // Processing
-  centeredPane: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
+  centeredPane: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, gap: 12 },
+  phaseTimer: { fontSize: 13, fontWeight: '500', letterSpacing: 0.5, fontVariant: ['tabular-nums'] },
   // Result
   resultScroll: { flex: 1 },
   resultContent: { padding: 20, paddingTop: 16 },

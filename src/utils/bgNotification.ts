@@ -4,8 +4,21 @@ import { Platform } from 'react-native';
 const CHANNEL_ID = 'peek-inference';
 const RUNNING_ID = 'peek-running';
 const DONE_ID = 'peek-done';
+const STOP_ACTION_ID = 'stop-inference';
+const CATEGORY_ID = 'inference-running';
 
 let channelReady = false;
+let categoryReady = false;
+let _cancelFn: (() => void) | null = null;
+let _responseListener: Notifications.Subscription | null = null;
+
+export function registerInferenceCancel(fn: () => void) {
+  _cancelFn = fn;
+}
+
+export function unregisterInferenceCancel() {
+  _cancelFn = null;
+}
 
 async function ensureChannel() {
   if (channelReady || Platform.OS !== 'android') return;
@@ -19,6 +32,28 @@ async function ensureChannel() {
   channelReady = true;
 }
 
+async function ensureCategory() {
+  if (categoryReady) return;
+  try {
+    await Notifications.setNotificationCategoryAsync(CATEGORY_ID, [
+      {
+        identifier: STOP_ACTION_ID,
+        buttonTitle: 'Stop',
+        options: { isDestructive: true, opensAppToForeground: false },
+      },
+    ]);
+    categoryReady = true;
+    if (!_responseListener) {
+      _responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+        if (response.actionIdentifier === STOP_ACTION_ID) {
+          _cancelFn?.();
+          clearInferenceNotifications();
+        }
+      });
+    }
+  } catch {}
+}
+
 export async function requestNotificationPermission() {
   const { status } = await Notifications.requestPermissionsAsync();
   return status === 'granted';
@@ -27,14 +62,16 @@ export async function requestNotificationPermission() {
 export async function showRunningNotification(label = 'Peek') {
   try {
     await ensureChannel();
+    await ensureCategory();
     await Notifications.dismissNotificationAsync(RUNNING_ID);
     await Notifications.scheduleNotificationAsync({
       identifier: RUNNING_ID,
       content: {
         title: `${label} is working…`,
-        body: 'Your AI task is running in the background. Tap to return.',
+        body: 'Tap Stop to cancel the task.',
         sound: false,
         sticky: true,
+        categoryIdentifier: CATEGORY_ID,
       },
       trigger: null,
     });

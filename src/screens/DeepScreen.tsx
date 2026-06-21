@@ -17,12 +17,13 @@ import { ChatMessage, Conversation } from '../types';
 import { completion, cancel, loadModel, unloadModel, InferenceCancelledError, EMBEDDINGGEMMA_300M_Q8_0 } from '@qvac/sdk';
 import { llmManager } from '../utils/modelManager';
 import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS, stripThink, splitStream } from '../utils/models';
-import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
+import { showRunningNotification, showDoneNotification, clearInferenceNotifications, registerInferenceCancel, unregisterInferenceCancel } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
 import ResultActions from '../components/ResultActions';
 import PeekLoader from '../components/PeekLoader';
 import ModelGalleryPicker from '../components/ModelGalleryPicker';
+import TypingDots from '../components/TypingDots';
 import { DownloadedModel } from '../types';
 
 type Phase = 'idle' | 'ingesting' | 'ready' | 'thinking';
@@ -34,6 +35,7 @@ interface Message {
   thinking?: string;
   inThink?: boolean;
   showThinking?: boolean;
+  streaming?: boolean;
   sources?: string[];
   showSources?: boolean;
 }
@@ -227,7 +229,7 @@ export default function DeepScreen() {
 
     if (!sessionSavedRef.current) {
       sessionSavedRef.current = true;
-      const sesId = Date.now().toString();
+      const sesId = convIdRef.current;
       await saveDeepSession({ id: sesId, docName: sourceTitle, firstQuestion: q, createdAt: new Date().toISOString() });
       const conv: Conversation = {
         id: convIdRef.current, moduleId: 'deep',
@@ -252,7 +254,7 @@ export default function DeepScreen() {
         ...newMessages.map(m => ({ role: m.role, content: m.text })),
       ];
 
-      const aiMsg: Message = { id: placeholderId, role: 'assistant', text: '', sources: docs.length > 0 ? docs : undefined };
+      const aiMsg: Message = { id: placeholderId, role: 'assistant', text: '', streaming: true, sources: docs.length > 0 ? docs : undefined };
       setMessages([...newMessages, aiMsg]);
 
       const gp = await getGenParams();
@@ -264,11 +266,13 @@ export default function DeepScreen() {
         generationParams: { predict: Math.min(gp.maxTokens, 1024), temp: gp.temp, top_k: gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty, reasoning_budget: -1 as -1 },
       });
       currentRunRef.current = run;
+      registerInferenceCancel(() => { if (currentRunRef.current) cancel({ requestId: currentRunRef.current.requestId }).catch(() => {}); });
+      showRunningNotification('Peek Deep');
       for await (const ev of run.events) {
         if ((ev as any).type === 'contentDelta') {
           full += (ev as any).text;
           const { answer: visible } = splitStream(full);
-          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: visible || '▍' } : m));
+          setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: visible || '' } : m));
           scrollRef.current?.scrollToEnd({ animated: false });
         } else if ((ev as any).type === 'thinkingDelta') {
           thinkingFull += (ev as any).text;
@@ -280,7 +284,7 @@ export default function DeepScreen() {
       const { text: cleanFull, thinking: thinkFallback } = stripThink(full);
       const finalText = cleanFull.trim() || 'No response.';
       const finalThinking = thinkingFull || thinkFallback || undefined;
-      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: finalText, thinking: finalThinking, inThink: false } : m));
+      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, text: finalText, thinking: finalThinking, inThink: false, streaming: false } : m));
       const aiCm: ChatMessage = { id: placeholderId, conversationId: convIdRef.current, role: 'assistant', content: finalText, thinking: finalThinking, createdAt: new Date().toISOString() };
       await appendMessage(aiCm);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -291,6 +295,7 @@ export default function DeepScreen() {
           : m));
       }
     } finally {
+      unregisterInferenceCancel();
       isInferringRef.current = false;
       setPhase('ready');
       if (AppState.currentState !== 'active') {
@@ -397,7 +402,9 @@ export default function DeepScreen() {
                 {msg.role === 'assistant' && msg.inThink && (
                   <View style={[styles.thinkingLive, { backgroundColor: theme.cardAlt, borderColor: theme.border }]}>
                     <Text style={[styles.thinkingLiveLabel, { color: theme.accent }]}>Reasoning...</Text>
-                    {msg.thinking ? <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={5}>{msg.thinking}▍</Text> : null}
+                    {msg.thinking
+                      ? <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={5}>{msg.thinking}</Text>
+                      : <TypingDots color={theme.textSecondary} size={6} />}
                   </View>
                 )}
                 <View style={[
@@ -407,7 +414,9 @@ export default function DeepScreen() {
                     : { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1, borderBottomLeftRadius: 4 },
                 ]}>
                   {msg.role === 'assistant' ? (
-                    <MarkdownText color={theme.text} fontSize={15} lineHeight={23}>{msg.text || (msg.inThink ? '' : '▍')}</MarkdownText>
+                    msg.streaming && !msg.text && !msg.inThink
+                      ? <TypingDots color={theme.textSecondary} size={7} />
+                      : <MarkdownText color={theme.text} fontSize={15} lineHeight={23}>{msg.text}</MarkdownText>
                   ) : (
                     <Text selectable style={[styles.bubbleText, { color: theme.accentFg }]}>{msg.text}</Text>
                   )}

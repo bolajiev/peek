@@ -19,7 +19,7 @@ import {
 } from '../utils/storage';
 import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS, stripThink, splitStream } from '../utils/models';
 import { DownloadedModel, Conversation, ChatMessage } from '../types';
-import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
+import { showRunningNotification, showDoneNotification, clearInferenceNotifications, registerInferenceCancel, unregisterInferenceCancel } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
 import { setDefaultModelId } from '../utils/storage';
@@ -44,6 +44,7 @@ export default function AIChatScreen() {
   const route = useRoute<any>();
   const preselectedModelId: string | undefined = route.params?.modelId;
   const resumeConvId: string | undefined = route.params?.conversationId;
+  const seedMessage: string | undefined = route.params?.seedMessage;
   const themeMode = useTheme();
   const theme = getTheme(themeMode);
   const insets = useSafeAreaInsets();
@@ -126,6 +127,14 @@ export default function AIChatScreen() {
     }).catch(() => {});
   }, [resumeConvId]);
 
+  // ── seed message pre-fill (from Voice/Lens "Continue in Chat") ──
+  const seedSentRef = useRef(false);
+  useEffect(() => {
+    if (!seedMessage || seedSentRef.current) return;
+    seedSentRef.current = true;
+    setInput(seedMessage);
+  }, [seedMessage]);
+
   // ── save conversation ───────────────────────────────────
   const persistMessage = async (msg: Message) => {
     const convId = convIdRef.current;
@@ -207,6 +216,8 @@ export default function AIChatScreen() {
         },
       });
       currentRunRef.current = run;
+      registerInferenceCancel(() => { if (currentRunRef.current) cancel({ requestId: currentRunRef.current.requestId }).catch(() => {}); });
+      showRunningNotification('AI Chat');
       let streamed = '';
       let thinkingText = '';
       for await (const event of run.events) {
@@ -243,6 +254,7 @@ export default function AIChatScreen() {
         setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, streaming: false } : m));
       }
     } finally {
+      unregisterInferenceCancel();
       isInferringRef.current = false;
       setIsTyping(false);
       setGenElapsed(0);

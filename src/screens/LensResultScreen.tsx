@@ -14,6 +14,7 @@ import { splitStream } from '../utils/models';
 import { findModel, LENS_SYSTEM_PROMPT } from './ScanScreen';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
+import TypingDots from '../components/TypingDots';
 
 export default function LensResultScreen() {
   const navigation = useNavigation<any>();
@@ -153,12 +154,9 @@ export default function LensResultScreen() {
             <View>
               <Text style={[styles.streamingLabel, { color: theme.accent }]}>Analyzing…</Text>
               {answer ? (
-                <Text style={[styles.answerText, { color: theme.text }]}>{answer}▍</Text>
+                <Text style={[styles.answerText, { color: theme.text }]}>{answer}</Text>
               ) : (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator size="small" color={theme.accent} />
-                  <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Reading image…</Text>
-                </View>
+                <TypingDots color={theme.accent} size={7} />
               )}
             </View>
           ) : phase === 'done' ? (

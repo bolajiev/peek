@@ -22,12 +22,13 @@ import {
 } from '../utils/storage';
 import { SYSTEM_PROMPTS, MODEL_KEYS, AVAILABLE_MODELS, stripThink, splitStream, detectArtifact } from '../utils/models';
 import { DownloadedModel, Conversation, ChatMessage } from '../types';
-import { showRunningNotification, showDoneNotification, clearInferenceNotifications } from '../utils/bgNotification';
+import { showRunningNotification, showDoneNotification, clearInferenceNotifications, registerInferenceCancel, unregisterInferenceCancel } from '../utils/bgNotification';
 import MarkdownText from '../components/MarkdownText';
 import CopyButton from '../components/CopyButton';
 import ModelGalleryPicker from '../components/ModelGalleryPicker';
 import MdPreviewPanel from '../components/MdPreviewPanel';
 import HtmlPreviewPanel from '../components/HtmlPreviewPanel';
+import TypingDots from '../components/TypingDots';
 
 interface GeneratedFile { name: string; fileUri: string; artifactType: 'md' | 'html'; }
 
@@ -266,6 +267,8 @@ export default function ChatScreen() {
         generationParams: { predict: fastMode ? 256 : gp.maxTokens, temp: fastMode ? 0.7 : gp.temp, top_k: fastMode ? 10 : gp.top_k, top_p: gp.top_p, repeat_penalty: gp.repeat_penalty, reasoning_budget: 0 as 0 },
       });
       currentRunRef.current = run;
+      registerInferenceCancel(() => { if (currentRunRef.current) cancel({ requestId: currentRunRef.current.requestId }).catch(() => {}); });
+      showRunningNotification('Peek Scribe');
       let streamed = '';
       let thinkingText = '';
       for await (const event of run.events) {
@@ -321,6 +324,7 @@ export default function ChatScreen() {
         setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, streaming: false } : m));
       }
     } finally {
+      unregisterInferenceCancel();
       isInferringRef.current = false;
       setIsTyping(false);
       setGenElapsed(0);
@@ -641,12 +645,14 @@ function MessageBubble({ msg, theme, onToggleThinking, onShareFile }: {
               msg.inThink ? (
                 <View style={styles.thinkingLive}>
                   <Text style={[styles.thinkingLiveLabel, { color: theme.accent }]}>Thinking...</Text>
-                  {msg.thinking ? <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={6}>{msg.thinking}▍</Text> : null}
+                  {msg.thinking
+                    ? <Text style={[styles.thinkingLiveText, { color: theme.textSecondary }]} numberOfLines={6}>{msg.thinking}</Text>
+                    : <TypingDots color={theme.textSecondary} size={6} />}
                 </View>
               ) : msg.text ? (
-                <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}▍</Text>
+                <Text style={[styles.bubbleText, { color: theme.text }]}>{msg.text}</Text>
               ) : (
-                <Text style={[styles.bubbleText, { color: theme.textSecondary }]}>▍</Text>
+                <TypingDots color={theme.textSecondary} size={7} />
               )
             ) : msg.text ? (
               <MarkdownText color={theme.text} fontSize={15} lineHeight={22}>
