@@ -31,6 +31,7 @@ type DownloadPhase = {
   pct: number;
   bytesWritten: number;
   bytesTotal: number;
+  speedBps: number;
 };
 
 function formatBytes(bytes: number): string {
@@ -38,6 +39,12 @@ function formatBytes(bytes: number): string {
   const gb = bytes / 1e9;
   if (gb >= 1) return `${gb.toFixed(1)} GB`;
   return `${Math.round(bytes / 1e6)} MB`;
+}
+
+function formatSpeed(bps: number): string {
+  if (bps >= 1e6) return `${(bps / 1e6).toFixed(1)} MB/s`;
+  if (bps >= 1e3) return `${Math.round(bps / 1e3)} KB/s`;
+  return `${Math.round(bps)} B/s`;
 }
 
 export default function ModelsScreen() {
@@ -86,23 +93,34 @@ export default function ModelsScreen() {
 
     setDownloading((prev) => ({
       ...prev,
-      [model.id]: { phase: 'model', pct: 0, bytesWritten: 0, bytesTotal: model.sizeBytes },
+      [model.id]: { phase: 'model', pct: 0, bytesWritten: 0, bytesTotal: model.sizeBytes, speedBps: 0 },
     }));
 
     try {
       const url = getHfDownloadUrl(model.modelSrc);
       const fileUri = new File(modelFolder, 'model.gguf').uri;
 
+      let lastBytes = 0;
+      let lastTime = Date.now();
       const dl = createDownloadResumable(url, fileUri, { headers }, (p) => {
         const pct = p.totalBytesExpectedToWrite > 0
           ? Math.round((p.totalBytesWritten / p.totalBytesExpectedToWrite) * 100)
           : 0;
+        const now = Date.now();
+        const dt = (now - lastTime) / 1000;
+        let speedBps = 0;
+        if (dt >= 0.5) {
+          speedBps = Math.round((p.totalBytesWritten - lastBytes) / dt);
+          lastBytes = p.totalBytesWritten;
+          lastTime = now;
+        }
         setDownloading((prev) => ({
           ...prev,
           [model.id]: {
             phase: 'model', pct,
             bytesWritten: p.totalBytesWritten,
             bytesTotal: p.totalBytesExpectedToWrite,
+            speedBps: speedBps > 0 ? speedBps : (prev[model.id]?.speedBps ?? 0),
           },
         }));
       });
@@ -115,22 +133,33 @@ export default function ModelsScreen() {
       if (model.projectionModelSrc) {
         setDownloading((prev) => ({
           ...prev,
-          [model.id]: { phase: 'mmproj', pct: 0, bytesWritten: 0, bytesTotal: 0 },
+          [model.id]: { phase: 'mmproj', pct: 0, bytesWritten: 0, bytesTotal: 0, speedBps: 0 },
         }));
 
         const mmUrl = getHfDownloadUrl(model.projectionModelSrc);
         const mmUri = new File(modelFolder, 'mmproj.gguf').uri;
 
+        let mmLastBytes = 0;
+        let mmLastTime = Date.now();
         const mmDl = createDownloadResumable(mmUrl, mmUri, { headers }, (p) => {
           const pct = p.totalBytesExpectedToWrite > 0
             ? Math.round((p.totalBytesWritten / p.totalBytesExpectedToWrite) * 100)
             : 0;
+          const now = Date.now();
+          const dt = (now - mmLastTime) / 1000;
+          let speedBps = 0;
+          if (dt >= 0.5) {
+            speedBps = Math.round((p.totalBytesWritten - mmLastBytes) / dt);
+            mmLastBytes = p.totalBytesWritten;
+            mmLastTime = now;
+          }
           setDownloading((prev) => ({
             ...prev,
             [model.id]: {
               phase: 'mmproj', pct,
               bytesWritten: p.totalBytesWritten,
               bytesTotal: p.totalBytesExpectedToWrite,
+              speedBps: speedBps > 0 ? speedBps : (prev[model.id]?.speedBps ?? 0),
             },
           }));
         });
@@ -201,9 +230,10 @@ export default function ModelsScreen() {
     if (!state) return null;
 
     const label = state.phase === 'model' ? 'Downloading model' : 'Downloading vision file';
-    const detail = state.bytesTotal > 0
+    const byteDetail = state.bytesTotal > 0
       ? `${formatBytes(state.bytesWritten)} / ${formatBytes(state.bytesTotal)}`
       : `${state.pct}%`;
+    const detail = state.speedBps > 0 ? `${byteDetail}  ·  ${formatSpeed(state.speedBps)}` : byteDetail;
 
     return (
       <View style={styles.progressWrapper}>

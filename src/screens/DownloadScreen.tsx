@@ -5,6 +5,7 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { File, Directory } from 'expo-file-system';
 import { createDownloadResumable } from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getTheme } from '../theme';
 import { useTheme } from '../navigation/AppNavigator';
 import {
@@ -19,6 +20,12 @@ function formatBytes(bytes: number): string {
   const gb = bytes / 1e9;
   if (gb >= 1) return `${gb.toFixed(1)} GB`;
   return `${Math.round(bytes / 1e6)} MB`;
+}
+
+function formatSpeed(bps: number): string {
+  if (bps >= 1e6) return `${(bps / 1e6).toFixed(1)} MB/s`;
+  if (bps >= 1e3) return `${Math.round(bps / 1e3)} KB/s`;
+  return `${Math.round(bps)} B/s`;
 }
 
 export default function DownloadScreen() {
@@ -38,10 +45,16 @@ export default function DownloadScreen() {
   const [pct, setPct] = useState(0);
   const [bytesWritten, setBytesWritten] = useState(0);
   const [bytesTotal, setBytesTotal] = useState(0);
+  const [speedBps, setSpeedBps] = useState(0);
+  const [isResuming, setIsResuming] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const cancelledRef = useRef(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const dlRef = useRef<ReturnType<typeof createDownloadResumable> | null>(null);
+  const currentResumeKeyRef = useRef('');
+  const lastBytesRef = useRef(0);
+  const lastTimeRef = useRef(Date.now());
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 320, useNativeDriver: true }).start();
@@ -101,8 +114,40 @@ export default function DownloadScreen() {
     const destUri = new File(folder, filename).uri;
     const url = getHfDownloadUrl(src);
 
+    // Load resume state if available
+    const resumeKey = `@peek_dl_resume_${m.id}_${filename}`;
+    currentResumeKeyRef.current = resumeKey;
+    let resumeData: string | undefined;
+    try {
+      const savedStr = await AsyncStorage.getItem(resumeKey);
+      if (savedStr) {
+        const savedState = JSON.parse(savedStr);
+        const partialFile = new File(savedState.fileUri ?? destUri);
+        if (partialFile.exists) {
+          resumeData = savedState.resumeData;
+          setIsResuming(true);
+        } else {
+          await AsyncStorage.removeItem(resumeKey);
+        }
+      }
+    } catch {}
+
+    lastBytesRef.current = 0;
+    lastTimeRef.current = Date.now();
+
     const dl = createDownloadResumable(url, destUri, { headers }, (p) => {
       if (cancelledRef.current) return;
+
+      // Speed calculation — update every 0.5s
+      const now = Date.now();
+      const dt = (now - lastTimeRef.current) / 1000;
+      if (dt >= 0.5) {
+        const delta = p.totalBytesWritten - lastBytesRef.current;
+        setSpeedBps(Math.round(delta / dt));
+        lastBytesRef.current = p.totalBytesWritten;
+        lastTimeRef.current = now;
+      }
+
       const filePct = p.totalBytesExpectedToWrite > 0
         ? (p.totalBytesWritten / p.totalBytesExpectedToWrite)
         : 0;
@@ -110,15 +155,30 @@ export default function DownloadScreen() {
       setPct(overallPct);
       setBytesWritten(p.totalBytesWritten);
       setBytesTotal(p.totalBytesExpectedToWrite > 0 ? p.totalBytesExpectedToWrite : (m.sizeBytes ?? 0));
-    });
+    }, resumeData);
+
+    dlRef.current = dl;
 
     const result = await dl.downloadAsync();
     if (!result) throw new Error('Download cancelled');
-    if (result.status !== 200) throw new Error(`HTTP ${result.status}`);
+    // 206 Partial Content is expected when resuming
+    if (result.status !== 200 && result.status !== 206) throw new Error(`HTTP ${result.status}`);
+
+    await AsyncStorage.removeItem(resumeKey).catch(() => {});
+    dlRef.current = null;
+    setIsResuming(false);
+    setSpeedBps(0);
   };
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     cancelledRef.current = true;
+    // Pause download and save state so next open can resume
+    if (dlRef.current && currentResumeKeyRef.current) {
+      try {
+        const pauseState = await dlRef.current.pauseAsync();
+        await AsyncStorage.setItem(currentResumeKeyRef.current, JSON.stringify(pauseState));
+      } catch {}
+    }
     navigation.goBack();
   };
 
@@ -128,6 +188,8 @@ export default function DownloadScreen() {
     setPct(0);
     setBytesWritten(0);
     setBytesTotal(0);
+    setSpeedBps(0);
+    setIsResuming(false);
     setErrorMsg('');
     runDownload();
   };
@@ -162,12 +224,16 @@ export default function DownloadScreen() {
 
         {phase === 'downloading' && (
           <>
-            <Text style={[styles.phaseLabel, { color: theme.textSecondary }]}>{label}</Text>
+            <Text style={[styles.phaseLabel, { color: theme.textSecondary }]}>
+              {isResuming ? 'Resuming…' : label}
+            </Text>
             <View style={[styles.trackOuter, { backgroundColor: theme.border }]}>
               <View style={[styles.trackFill, { backgroundColor: theme.accent, width: `${pct}%` }]} />
             </View>
             <Text style={[styles.pctText, { color: theme.textSecondary }]}>
-              {pct}%{bytesTotal > 0 ? `  ·  ${formatBytes(bytesWritten)} / ${formatBytes(bytesTotal)}` : ''}
+              {pct}%
+              {bytesTotal > 0 ? `  ·  ${formatBytes(bytesWritten)} / ${formatBytes(bytesTotal)}` : ''}
+              {speedBps > 0 ? `  ·  ${formatSpeed(speedBps)}` : ''}
             </Text>
             <TouchableOpacity
               style={[styles.cancelBtn, { borderColor: theme.border }]}
