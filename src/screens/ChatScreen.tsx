@@ -304,7 +304,9 @@ export default function ChatScreen() {
             setMdPanelFile(generatedFile);
             setTimeout(() => setMdPanelVisible(true), 300);
           } else {
-            // HTML: don't auto-open a panel — let user tap "Open" on the file card
+            setHtmlPanelHtml(artifact.source);
+            setHtmlPanelFile(generatedFile);
+            setTimeout(() => setHtmlPanelVisible(true), 300);
           }
         }
       }
