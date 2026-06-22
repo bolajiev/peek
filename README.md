@@ -1,10 +1,10 @@
 # Peek — Private On-Device AI
 
-**Five AI modules. One phone. No cloud.**
+**Seven AI modules. One phone. No cloud.**
 
-Peek is a mobile app powered by the [qvac SDK](https://www.npmjs.com/package/@qvac/sdk) that runs vision, voice, writing, and research AI models fully on your device. Your photos, audio, documents, and conversations never leave your phone.
+Peek is an Android app powered by the [QVAC SDK](https://www.npmjs.com/package/@qvac/sdk) that runs AI models fully on your device. Your photos, audio, documents, and conversations never leave your phone.
 
-Built for the **[qvac Unleash Edge AI Hackathon](https://dorahacks.io/hackathon/qvac-unleach-edge-ai-i/tracks)**.
+Built for the **[QVAC Unleash Edge AI Hackathon](https://dorahacks.io/hackathon/qvac-unleach-edge-ai-i/tracks)**.
 
 ---
 
@@ -13,24 +13,31 @@ Built for the **[qvac Unleash Edge AI Hackathon](https://dorahacks.io/hackathon/
 | Module | What it does |
 |--------|-------------|
 | **Peek Lens** | Point your camera or pick an image — ask anything about what it sees |
-| **Peek Voice** | Record or upload audio → live transcript → AI summary |
+| **Peek Voice** | Record or upload audio → live transcript → AI explanation (MedPsy 1.7B default) |
 | **Peek Scribe** | Draft documents, notes, or HTML pages with an on-device writing assistant |
-| **Peek Deep** | Load a local file → ask questions about it → fully private RAG |
-| **AI Chat** | Open-ended conversations with a local language model, history saved on-device |
+| **Peek Deep** | Load a local file → ask questions about it → fully private on-device RAG |
+| **AI Chat** | Conversations with a local LLM — supports inline interactive maps via tool calling |
+| **Map Search** | Find any place in the world using Google Maps embed — no GPS required |
+| **Peel Fun** | Tic-Tac-Toe against the on-device AI — Easy uses the LLM, Hard uses minimax |
 
 ---
 
 ## Highlights
 
-- **100% on-device inference** — qvac SDK handles model loading, streaming, and cancellation natively
+- **100% on-device inference** — QVAC SDK handles model loading, streaming, and cancellation natively
 - **Private by design** — no telemetry, no accounts, no data ever sent to a server
+- **Real tool calling** — AI Chat uses the QVAC SDK `tools` API; asking about a location triggers `show_map` and renders an interactive map inline in the chat bubble
+- **MedPsy 1.7B default** — Voice explanation defaults to the MedPsy 1.7B model; other screens are user-choice
+- **Map privacy notice** — a caution card appears every time the map screen opens, explaining that search queries go to Google Maps but no GPS data is collected
 - **Model management** — download models once, stored in per-model folders; swap models per session
+- **Inference audit log** — every inference call logs use case, model name, TTFT, total ms, tokens/sec; exportable as CSV from Settings
+- **Voice pipeline** — 8-second chunk transcription with Whisper, cross-chunk context chaining, hallucination filtering, MedPsy explanation
 - **Scribe artifacts** — generates Markdown and interactive HTML files viewable in-app
-- **Deep RAG** — embeds local files on-device using qvac's embedding model; no URL fetching
-- **Voice pipeline** — chunk-based live transcription → LLM summary with elapsed time display
-- **Token stats** — elapsed time and token count shown after every AI response
-- **Android notifications** — stop inference from the notification shade while the app is in background
+- **Deep RAG** — embeds local files on-device using QVAC's embedding model
+- **Token stats** — TTFT and tokens/sec shown after every AI response
+- **Android notifications** — stop inference from the notification shade while backgrounded
 - **Dark and light theme**, conversation history, configurable generation parameters
+- **Welcome screen on update** — version tracking shows onboarding once whenever the app updates
 
 ---
 
@@ -39,10 +46,11 @@ Built for the **[qvac Unleash Edge AI Hackathon](https://dorahacks.io/hackathon/
 | Layer | Library |
 |-------|---------|
 | Framework | React Native, Expo SDK 54 (bare workflow) |
-| AI runtime | `@qvac/sdk` — loadModel, completion, transcribeStream, ragIngest, ragSearch |
+| AI runtime | `@qvac/sdk` v0.13.5 — completion, transcribeStream, tool calling, RAG |
 | Camera | expo-camera |
 | Audio | expo-av |
-| File system | expo-file-system v2 (File, Directory, Paths) |
+| Maps | Google Maps embed via react-native-webview (no API key, no GPS) |
+| File system | expo-file-system |
 | Document picker | expo-document-picker |
 | Persistence | @react-native-async-storage/async-storage |
 | Navigation | React Navigation (native stack) |
@@ -51,40 +59,38 @@ Built for the **[qvac Unleash Edge AI Hackathon](https://dorahacks.io/hackathon/
 
 ## Models
 
-Models are downloaded on first use and stored in per-model folders. Nothing is bundled in the APK.
+Models are downloaded on first use and stored on-device. Nothing is bundled in the APK.
 
 | Model | Size | Use |
 |-------|------|-----|
-| Qwen3 1.7B | 1.1 GB | Fast general text — Scribe, Chat, Voice summary |
-| MedPsy 4B | 2.7 GB | Medical & mental health specialist — Lens health mode |
-| Gemma 4 2B | 2.7 GB | Stronger at HTML, code, and interactive games — Scribe |
+| MedPsy 1.7B | ~1 GB | Default for Voice explanation — medical & general AI |
+| MedPsy 4B | 2.7 GB | Stronger medical specialist — Scribe, Chat, Deep |
+| Qwen3 1.7B | 1.1 GB | Fast general text |
+| Gemma 4 2B | 2.7 GB | Strong at code and HTML |
 | SmolVLM2 500M | 521 MB | On-device image understanding — Peek Lens |
 
-Vision models automatically download a companion `mmproj.gguf` projection file, handled transparently.
+---
+
+## Remote APIs
+
+Peek is offline-first. The only external calls are:
+
+| Service | When | What is sent |
+|---------|------|-------------|
+| Google Maps embed | Map Search screen / AI Chat inline map | Search query string only. No GPS, no device ID. |
+| EAS / Expo | Build time only | Not used at runtime |
+
+All AI inference runs locally. See `api-calls.json` for the full disclosure.
 
 ---
 
 ## Getting Started
 
-### Prerequisites
-
-- Node.js 18+
-- EAS CLI (`npm i -g eas-cli`) for device builds
-
-### Development
-
 ```bash
 npm install
-npx expo start
+npx expo start          # development
+eas build --platform android --profile preview   # APK
 ```
-
-### Build APK (Android)
-
-```bash
-eas build --platform android --profile preview
-```
-
-The APK targets arm64-v8a with R8 minification and resource shrinking enabled.
 
 ---
 
@@ -93,43 +99,28 @@ The APK targets arm64-v8a with R8 minification and resource shrinking enabled.
 ```
 src/
 ├── components/
-│   ├── ConfigSlider.tsx        # Slider for generation params (Settings)
-│   ├── CopyButton.tsx
-│   ├── HtmlPreviewPanel.tsx    # In-app WebView for generated HTML
 │   ├── Icons.tsx
 │   ├── MarkdownText.tsx
-│   ├── MdPreviewPanel.tsx      # In-app viewer for generated Markdown
 │   ├── ModelGalleryPicker.tsx  # Bottom sheet model switcher
-│   ├── PeekLoader.tsx          # Animated loading indicator
-│   ├── ResultActions.tsx       # Copy / Save / Share row
-│   └── TypingDots.tsx          # Animated dots for streaming state
+│   └── ...
 ├── navigation/
 │   └── AppNavigator.tsx        # Root stack, theme context
 ├── screens/
-│   ├── AboutScreen.tsx
-│   ├── AIChatHubScreen.tsx     # Chat history list
-│   ├── AIChatScreen.tsx        # AI Chat — streaming conversation
-│   ├── ChatScreen.tsx          # Peek Scribe — writing assistant
-│   ├── DeepHubScreen.tsx       # Deep session history
-│   ├── DeepScreen.tsx          # Peek Deep — file RAG
-│   ├── DownloadScreen.tsx      # Model download progress
-│   ├── HistoryScreen.tsx       # Lens scan history
-│   ├── HomeScreen.tsx          # Module grid
-│   ├── LensHubScreen.tsx       # Lens entry — camera vs. gallery
-│   ├── LensResultScreen.tsx    # Vision inference result
-│   ├── ModelsScreen.tsx        # Download & manage models
-│   ├── OnboardingScreen.tsx    # First-launch flow
-│   ├── ScanScreen.tsx          # Camera capture + user query
-│   ├── ScribeHubScreen.tsx     # Scribe conversation history
-│   ├── SettingsScreen.tsx      # Theme, accelerator, generation params
-│   ├── SplashScreen.tsx        # Startup model sync
-│   └── VoiceScreen.tsx         # Record / upload → transcribe → summarize
+│   ├── AIChatScreen.tsx        # AI Chat — streaming + show_map tool calling
+│   ├── NearbyScreen.tsx        # Map Search — Google Maps embed, privacy notice
+│   ├── PeelFunScreen.tsx       # Peel Fun — Tic-Tac-Toe vs on-device AI
+│   ├── VoiceScreen.tsx         # Voice — Whisper transcription + MedPsy explanation
+│   ├── DeepScreen.tsx          # Deep — file RAG
+│   ├── ChatScreen.tsx          # Scribe — writing assistant
+│   ├── LensResultScreen.tsx    # Lens — vision inference
+│   ├── SettingsScreen.tsx      # Theme, params, CSV export
+│   ├── OnboardingScreen.tsx    # 3-slide welcome, shown on first launch + updates
+│   └── ...
 ├── utils/
-│   ├── bgNotification.ts       # Android inference notification + Stop action
-│   ├── modelManager.ts         # LLMManager singleton (hot-swap), WhisperManager
-│   ├── models.ts               # Model catalogue, system prompts, stream utils
-│   ├── ragService.ts           # ragIngest / ragQuery wrappers
-│   └── storage.ts              # AsyncStorage helpers, conversation persistence
+│   ├── auditLogger.ts          # Inference log — TTFT, tokens/sec, CSV export
+│   ├── modelManager.ts         # LLMManager + WhisperManager singletons
+│   ├── models.ts               # Model catalogue, system prompts, tool definitions
+│   └── storage.ts              # AsyncStorage helpers, version tracking
 └── types/
     └── index.ts
 ```
@@ -138,8 +129,8 @@ src/
 
 ## Privacy
 
-- All inference runs on-device via the qvac native runtime
+- All AI inference runs on-device via the QVAC native runtime
 - No images, audio, text, or results are sent to any server
-- Audio recordings are processed from the app's documents directory and never uploaded
-- Peek Deep reads files entirely locally — no URL fetching, no external API calls
+- Map Search uses Google Maps embed — only the search query text is sent to Google; no GPS or device location is collected
+- A privacy notice appears every time the map is opened
 - Models are downloaded once and cached on-device
