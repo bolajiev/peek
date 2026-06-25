@@ -60,25 +60,19 @@
   <rect x="601" y="106" width="200" height="12" fill="#1c1c1c"/>
   <text x="701" y="105" text-anchor="middle" fill="#34d399" font-size="9" font-weight="700" font-family="system-ui,sans-serif" letter-spacing="1">ON-DEVICE MODELS</text>
 
-  <circle cx="619" cy="135" r="3" fill="#34d399"/>
-  <text x="630" y="139" fill="#e5e7eb" font-size="13" font-weight="600" font-family="system-ui,sans-serif">MedPsy 1.7B</text>
-  <text x="630" y="153" fill="#4b5563" font-size="10" font-family="system-ui,sans-serif">voice default · ~1 GB</text>
+  <!-- MedPsy 1.7B card -->
+  <rect x="617" y="120" width="168" height="78" rx="8" fill="#0a1a0f" stroke="#34d399" stroke-width="1"/>
+  <text x="701" y="140" text-anchor="middle" fill="#34d399" font-size="10" font-weight="700" font-family="system-ui,sans-serif">MedPsy 1.7B</text>
+  <text x="701" y="157" text-anchor="middle" fill="#e5e7eb" font-size="11" font-family="system-ui,sans-serif">Voice · Chat · Scribe</text>
+  <text x="701" y="173" text-anchor="middle" fill="#4b5563" font-size="10" font-family="system-ui,sans-serif">default model · ~1 GB</text>
+  <rect x="617" y="120" width="52" height="16" rx="4" fill="#34d399"/>
+  <text x="643" y="132" text-anchor="middle" fill="#000" font-size="8" font-weight="700" font-family="system-ui,sans-serif">DEFAULT</text>
 
-  <circle cx="619" cy="174" r="3" fill="#34d399"/>
-  <text x="630" y="178" fill="#e5e7eb" font-size="13" font-weight="600" font-family="system-ui,sans-serif">MedPsy 4B</text>
-  <text x="630" y="192" fill="#4b5563" font-size="10" font-family="system-ui,sans-serif">specialist · 2.7 GB</text>
-
-  <circle cx="619" cy="213" r="3" fill="#34d399"/>
-  <text x="630" y="217" fill="#e5e7eb" font-size="13" font-weight="600" font-family="system-ui,sans-serif">Qwen3 1.7B</text>
-  <text x="630" y="231" fill="#4b5563" font-size="10" font-family="system-ui,sans-serif">fast text · 1.1 GB</text>
-
-  <circle cx="619" cy="252" r="3" fill="#34d399"/>
-  <text x="630" y="256" fill="#e5e7eb" font-size="13" font-weight="600" font-family="system-ui,sans-serif">SmolVLM2 500M</text>
-  <text x="630" y="270" fill="#4b5563" font-size="10" font-family="system-ui,sans-serif">vision · 521 MB</text>
-
-  <circle cx="619" cy="291" r="3" fill="#34d399"/>
-  <text x="630" y="295" fill="#e5e7eb" font-size="13" font-weight="600" font-family="system-ui,sans-serif">Gemma 4 2B</text>
-  <text x="630" y="309" fill="#4b5563" font-size="10" font-family="system-ui,sans-serif">code / HTML · 2.7 GB</text>
+  <!-- MedPsy 4B card -->
+  <rect x="617" y="212" width="168" height="78" rx="8" fill="#111111" stroke="#252525" stroke-width="1"/>
+  <text x="701" y="232" text-anchor="middle" fill="#e5e7eb" font-size="10" font-weight="700" font-family="system-ui,sans-serif">MedPsy 4B</text>
+  <text x="701" y="249" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">Deep · Lens · Research</text>
+  <text x="701" y="265" text-anchor="middle" fill="#4b5563" font-size="10" font-family="system-ui,sans-serif">specialist · 2.7 GB</text>
 
   <!-- Bottom banner -->
   <rect x="25" y="366" width="850" height="44" rx="8" fill="#0a1628" stroke="#1e3a5f" stroke-width="1"/>
