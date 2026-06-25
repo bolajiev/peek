@@ -1,6 +1,7 @@
 # Peek — Social Content & Video Proof Guide
 
 Post these as 5 separate threads on X / LinkedIn. Each thread stands alone.
+All examples use MedPsy — the model Peek defaults to.
 
 ---
 
@@ -10,11 +11,11 @@ I built Peek for QVAC and here are 4 things that come pre-loaded in the SDK. Fir
 
 **Video proof — under 30 seconds:**
 1. Open AI Chat
-2. Type: `explain quantum computing in 2 lines`
-3. Hit send — let it stream
+2. Type: `explain what anxiety does to the brain in 2 lines`
+3. Hit send — let MedPsy stream the answer
 4. Stop recording when response finishes
 
-What to highlight: tokens appearing one by one, the tok/s stat at the bottom of the bubble.
+What to highlight: tokens appearing one by one from MedPsy 1.7B, the tok/s stat at the bottom of the bubble.
 
 ---
 
@@ -24,11 +25,11 @@ Second: `transcribeStream()`. Peek Voice chunks audio every 8 seconds, runs Whis
 
 **Video proof — under 30 seconds:**
 1. Open Voice
-2. Tap record — say 2-3 sentences out loud
+2. Tap record — describe a symptom or health question out loud
 3. Tap stop — let it transcribe then explain
-4. Stop recording when the summary appears
+4. Stop recording when the MedPsy explanation appears
 
-What to highlight: transcript building up live, MedPsy explanation appearing below.
+What to highlight: transcript building up live, MedPsy 1.7B explanation appearing below it.
 
 ---
 
@@ -38,45 +39,45 @@ Third: on-device RAG. `ragIngest()` embeds your file locally. `ragSearch()` pull
 
 **Video proof — under 30 seconds:**
 1. Open Deep
-2. Load any text or PDF file (a medical report works well)
-3. Type: `what is this document about?`
-4. Let it answer — stop recording when done
+2. Load a medical report or health document
+3. Type: `what does this document say about the diagnosis?`
+4. Let MedPsy answer — stop recording when done
 
-What to highlight: the file loading locally, the answer pulling from the actual document content.
+What to highlight: the file loading locally, MedPsy pulling the answer from the actual document content.
 
 ---
 
 ## Thread 4 — Tool Calling
 
-Fourth: tool calling. Pass a `tools` array to `completion()`. When the model calls a tool, you get a `toolCall` event with parsed arguments. In Peek, asking "show me Paris" triggers `show_map` and renders a live map in the chat bubble instantly.
+Fourth: tool calling. Pass a `tools` array to `completion()`. When the model calls a tool, you get a `toolCall` event with parsed arguments. In Peek, asking "show me the nearest hospital area" triggers `show_map` and renders a live map in the chat bubble instantly — powered by MedPsy.
 
 **Video proof — under 30 seconds:**
 1. Open AI Chat
-2. Type: `show me Times Square New York`
-3. Hit send — map appears inline in the bubble
+2. Type: `show me Johns Hopkins Hospital Baltimore`
+3. Hit send — MedPsy calls show_map, map appears inline
 4. Scroll or zoom the map slightly to show it's interactive
 
-What to highlight: the map appearing inside the chat message — not opening a new screen, rendered inline as a tool result.
+What to highlight: the map appearing inside the chat message as a MedPsy tool result — not a separate screen.
 
 ---
 
 ## Thread 5 — Useful things in the SDK
 
 Bonus things in the QVAC SDK worth knowing:
-`cancel({ requestId })` — stop inference from anywhere
+`cancel({ requestId })` — stop MedPsy inference from anywhere
 `run.stats` — tokens/sec after every response
 `reasoning_budget: 0` — disables chain-of-thought for speed
-`llmManager.ensure()` — keeps models hot between calls
+`llmManager.ensure()` — keeps MedPsy hot between calls
 `syncModelsFromDisk()` — no server, just what's on the phone
 
 **Video proof — under 30 seconds:**
 1. Open AI Chat
-2. Type: `write me a long essay about space` — hit send
-3. While it streams, swipe down the notification shade
+2. Type: `explain the symptoms of hypertension in detail` — hit send
+3. While MedPsy streams, swipe down the notification shade
 4. Tap **Stop** — inference cancels immediately
-5. Then do a short prompt and point at the tok/s number in the response
+5. Do a short prompt and point at the tok/s number in the response
 
-What to highlight: cancellation working from the Android notification, tok/s stat visible after a response.
+What to highlight: cancellation working from the Android notification, MedPsy tok/s stat visible after a response.
 
 ---
 
