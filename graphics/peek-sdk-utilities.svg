@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="900" height="240" viewBox="0 0 900 240" xmlns="http://www.w3.org/2000/svg">
+  <rect width="900" height="240" fill="#0d0d0d"/>
+
+  <text x="450" y="36" text-anchor="middle" fill="#f9fafb" font-size="15" font-weight="700" font-family="system-ui,sans-serif">QVAC SDK — Utilities Used in Peek</text>
+
+  <!-- Card 1: cancel() -->
+  <rect x="30" y="55" width="154" height="138" rx="10" fill="#0f1729" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="30" y="55" width="154" height="36" rx="10" fill="#141f35"/>
+  <rect x="30" y="79" width="154" height="12" fill="#141f35"/>
+  <text x="107" y="78" text-anchor="middle" fill="#c7d2fe" font-size="11" font-weight="700" font-family="'Courier New',Courier,monospace">cancel()</text>
+  <text x="107" y="109" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">Stop MedPsy</text>
+  <text x="107" y="126" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">mid-stream from</text>
+  <text x="107" y="143" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">anywhere — even</text>
+  <text x="107" y="160" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">the notif shade</text>
+  <text x="107" y="180" text-anchor="middle" fill="#6366f1" font-size="10" font-family="'Courier New',Courier,monospace">{ requestId }</text>
+
+  <!-- Card 2: run.stats -->
+  <rect x="202" y="55" width="154" height="138" rx="10" fill="#0f1729" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="202" y="55" width="154" height="36" rx="10" fill="#141f35"/>
+  <rect x="202" y="79" width="154" height="12" fill="#141f35"/>
+  <text x="279" y="78" text-anchor="middle" fill="#c7d2fe" font-size="11" font-weight="700" font-family="'Courier New',Courier,monospace">run.stats</text>
+  <text x="279" y="109" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">tokens/sec after</text>
+  <text x="279" y="126" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">every response.</text>
+  <text x="279" y="143" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">Peek shows TTFT</text>
+  <text x="279" y="160" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">+ tok/s on every</text>
+  <text x="279" y="180" text-anchor="middle" fill="#6366f1" font-size="10" font-family="'Courier New',Courier,monospace">generatedTokens</text>
+
+  <!-- Card 3: reasoning_budget -->
+  <rect x="374" y="55" width="154" height="138" rx="10" fill="#0f1729" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="374" y="55" width="154" height="36" rx="10" fill="#141f35"/>
+  <rect x="374" y="79" width="154" height="12" fill="#141f35"/>
+  <text x="451" y="78" text-anchor="middle" fill="#c7d2fe" font-size="10" font-weight="700" font-family="'Courier New',Courier,monospace">reasoning_budget</text>
+  <text x="451" y="109" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">Set to 0 to kill</text>
+  <text x="451" y="126" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">chain-of-thought.</text>
+  <text x="451" y="143" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">MedPsy answers</text>
+  <text x="451" y="160" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">instantly in Chat</text>
+  <text x="451" y="180" text-anchor="middle" fill="#6366f1" font-size="10" font-family="'Courier New',Courier,monospace">0 | -1</text>
+
+  <!-- Card 4: llmManager.ensure() -->
+  <rect x="546" y="55" width="154" height="138" rx="10" fill="#0f1729" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="546" y="55" width="154" height="36" rx="10" fill="#141f35"/>
+  <rect x="546" y="79" width="154" height="12" fill="#141f35"/>
+  <text x="623" y="78" text-anchor="middle" fill="#c7d2fe" font-size="10" font-weight="700" font-family="'Courier New',Courier,monospace">llmManager</text>
+  <text x="623" y="109" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">Keeps MedPsy</text>
+  <text x="623" y="126" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">loaded between</text>
+  <text x="623" y="143" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">messages. No</text>
+  <text x="623" y="160" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">cold start lag</text>
+  <text x="623" y="180" text-anchor="middle" fill="#6366f1" font-size="10" font-family="'Courier New',Courier,monospace">.ensure(model)</text>
+
+  <!-- Card 5: syncModelsFromDisk() -->
+  <rect x="718" y="55" width="154" height="138" rx="10" fill="#0f1729" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="718" y="55" width="154" height="36" rx="10" fill="#141f35"/>
+  <rect x="718" y="79" width="154" height="12" fill="#141f35"/>
+  <text x="795" y="78" text-anchor="middle" fill="#c7d2fe" font-size="10" font-weight="700" font-family="'Courier New',Courier,monospace">syncFromDisk()</text>
+  <text x="795" y="109" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">Scans device for</text>
+  <text x="795" y="126" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">downloaded models</text>
+  <text x="795" y="143" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">at startup. No</text>
+  <text x="795" y="160" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="system-ui,sans-serif">server lookup</text>
+  <text x="795" y="180" text-anchor="middle" fill="#6366f1" font-size="10" font-family="'Courier New',Courier,monospace">DownloadedModel[]</text>
+
+  <text x="450" y="218" text-anchor="middle" fill="#374151" font-size="10" font-family="system-ui,sans-serif">All five utilities run fully on-device. MedPsy stays loaded, cancellable, and measurable across every Peek module.</text>
+</svg>
