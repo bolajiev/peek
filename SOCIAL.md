@@ -7,6 +7,8 @@ All examples use MedPsy — the model Peek defaults to.
 
 ## Thread 1 — completion() with streaming
 
+> **SVG:** `graphics/peek-completion-streaming.svg`
+
 I built Peek for QVAC and here are 4 things that come pre-loaded in the SDK. First: `completion()` with streaming. Pass a model ID, history, and `stream: true`. Tokens stream live to your UI. Nothing leaves the phone.
 
 **Video proof — under 30 seconds:**
@@ -20,6 +22,8 @@ What to highlight: tokens appearing one by one from MedPsy 1.7B, the tok/s stat 
 ---
 
 ## Thread 2 — transcribeStream()
+
+> **SVG:** `graphics/peek-voice-pipeline.svg`
 
 Second: `transcribeStream()`. Peek Voice chunks audio every 8 seconds, runs Whisper on-device, chains context across chunks. Full offline transcription pipeline. No cloud API. Just a file path and an events loop.
 
@@ -35,6 +39,8 @@ What to highlight: transcript building up live, MedPsy 1.7B explanation appearin
 
 ## Thread 3 — RAG (ragIngest + ragSearch)
 
+> **SVG:** `graphics/peek-rag.svg`
+
 Third: on-device RAG. `ragIngest()` embeds your file locally. `ragSearch()` pulls relevant chunks before each LLM call. Peek Deep lets users ask questions about private documents — nothing ever leaves the device.
 
 **Video proof — under 30 seconds:**
@@ -49,6 +55,8 @@ What to highlight: the file loading locally, MedPsy pulling the answer from the 
 
 ## Thread 4 — Tool Calling
 
+> **SVG:** `graphics/peek-tool-calling.svg`
+
 Fourth: tool calling. Pass a `tools` array to `completion()`. When the model calls a tool, you get a `toolCall` event with parsed arguments. In Peek, asking "show me the nearest hospital area" triggers `show_map` and renders a live map in the chat bubble instantly — powered by MedPsy.
 
 **Video proof — under 30 seconds:**
@@ -62,6 +70,8 @@ What to highlight: the map appearing inside the chat message as a MedPsy tool re
 ---
 
 ## Thread 5 — Useful things in the SDK
+
+> **SVG:** `graphics/peek-sdk-utilities.svg`
 
 Bonus things in the QVAC SDK worth knowing:
 `cancel({ requestId })` — stop MedPsy inference from anywhere
@@ -78,6 +88,18 @@ Bonus things in the QVAC SDK worth knowing:
 5. Do a short prompt and point at the tok/s number in the response
 
 What to highlight: cancellation working from the Android notification, MedPsy tok/s stat visible after a response.
+
+---
+
+## SVG Quick Reference
+
+| Thread | SVG file | Shows |
+|--------|----------|-------|
+| 1 — completion() | `peek-completion-streaming.svg` | User message → QVAC SDK → event loop → MedPsy streams live |
+| 2 — transcribeStream() | `peek-voice-pipeline.svg` | Audio → 8s chunks → Whisper → transcript → MedPsy explanation |
+| 3 — RAG | `peek-rag.svg` | Medical PDF → ragIngest → ragSearch → MedPsy answers |
+| 4 — Tool Calling | `peek-tool-calling.svg` | User types → completion(tools) → toolCall event → map inline |
+| 5 — SDK utilities | `peek-sdk-utilities.svg` | cancel · run.stats · reasoning_budget · llmManager · syncFromDisk |
 
 ---
 
